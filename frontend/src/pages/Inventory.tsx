@@ -1,0 +1,659 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { 
+  Plus, 
+  Search, 
+  Edit2, 
+  Trash2, 
+  AlertCircle, 
+  X,
+  SlidersHorizontal,
+  FileSpreadsheet,
+  Layers
+} from 'lucide-react';
+
+interface Product {
+  id: number;
+  name: string;
+  sku: string;
+  barcode: string | null;
+  category_id: number | null;
+  category_name?: string;
+  unit_price: string | number;
+  cost_price: string | number;
+  quantity_on_hand: number;
+  reorder_threshold: number;
+  supplier_id: number | null;
+  supplier_name?: string;
+  expiry_date: string | null;
+}
+
+interface Category {
+  id: number;
+  name: string;
+}
+
+interface Supplier {
+  id: number;
+  name: string;
+}
+
+export const Inventory: React.FC = () => {
+  const { apiFetch, showNotification, user, formatCurrency, currency } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  // Modals state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Quick stock adjustment state
+  const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
+  const [adjProduct, setAdjProduct] = useState<Product | null>(null);
+  const [adjQty, setAdjQty] = useState('');
+  const [adjType, setAdjType] = useState('audit'); // 'audit', 'damage', 'loss'
+  const [adjReason, setAdjReason] = useState('');
+
+  // Filters & Search
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [sortBy, setSortBy] = useState('name');
+
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    sku: '',
+    barcode: '',
+    category_id: '',
+    unit_price: '',
+    cost_price: '',
+    quantity_on_hand: '0',
+    reorder_threshold: '10',
+    supplier_id: '',
+    expiry_date: ''
+  });
+
+  const fetchInitialData = async () => {
+    try {
+      setLoading(true);
+      const [prods, cats, sups] = await Promise.all([
+        apiFetch<Product[]>('/api/products'),
+        apiFetch<Category[]>('/api/categories'),
+        apiFetch<Supplier[]>('/api/suppliers')
+      ]);
+      setProducts(prods);
+      setCategories(cats);
+      setSuppliers(sups);
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to load inventory data', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
+
+  // Quick Stock Adjustment Handler
+  const handleOpenAdjModal = (prod: Product) => {
+    setAdjProduct(prod);
+    setAdjQty('');
+    setAdjType('audit');
+    setAdjReason('');
+    setIsAdjModalOpen(true);
+  };
+
+  const handleQuickAdjustmentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjProduct || !adjQty) return;
+
+    const qty = parseInt(adjQty);
+    if (isNaN(qty) || qty === 0) {
+      showNotification('Please enter a valid non-zero quantity', 'warning');
+      return;
+    }
+
+    try {
+      await apiFetch('/api/stock-adjustments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: adjProduct.id,
+          quantity_changed: qty,
+          adjustment_type: adjType,
+          reason: adjReason || `Quick ${adjType} adjustment`
+        })
+      });
+
+      showNotification('Stock adjusted successfully!', 'success');
+      setIsAdjModalOpen(false);
+      fetchInitialData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to adjust stock', 'error');
+    }
+  };
+
+  // CRUD actions
+  const handleOpenAddModal = () => {
+    setEditingProduct(null);
+    setFormData({
+      name: '',
+      sku: `PRD-${String(Date.now()).slice(-6)}`,
+      barcode: '',
+      category_id: categories[0]?.id.toString() || '',
+      unit_price: '',
+      cost_price: '',
+      quantity_on_hand: '0',
+      reorder_threshold: '10',
+      supplier_id: suppliers[0]?.id.toString() || '',
+      expiry_date: ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (prod: Product) => {
+    setEditingProduct(prod);
+    setFormData({
+      name: prod.name,
+      sku: prod.sku,
+      barcode: prod.barcode || '',
+      category_id: prod.category_id?.toString() || '',
+      unit_price: prod.unit_price.toString(),
+      cost_price: prod.cost_price.toString(),
+      quantity_on_hand: prod.quantity_on_hand.toString(),
+      reorder_threshold: prod.reorder_threshold.toString(),
+      supplier_id: prod.supplier_id?.toString() || '',
+      expiry_date: prod.expiry_date ? prod.expiry_date.split('T')[0] : ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteProduct = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this product?')) return;
+    try {
+      await apiFetch(`/api/products/${id}`, { method: 'DELETE' });
+      showNotification('Product deleted successfully', 'success');
+      fetchInitialData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to delete product', 'error');
+    }
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.sku || !formData.unit_price || !formData.cost_price) {
+      showNotification('Please fill in all required fields', 'warning');
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      category_id: formData.category_id ? parseInt(formData.category_id) : null,
+      supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
+      unit_price: parseFloat(formData.unit_price),
+      cost_price: parseFloat(formData.cost_price),
+      quantity_on_hand: parseInt(formData.quantity_on_hand),
+      reorder_threshold: parseInt(formData.reorder_threshold),
+      expiry_date: formData.expiry_date || null
+    };
+
+    try {
+      if (editingProduct) {
+        await apiFetch(`/api/products/${editingProduct.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        showNotification('Product updated successfully', 'success');
+      } else {
+        await apiFetch('/api/products', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showNotification('Product created successfully', 'success');
+      }
+      setIsModalOpen(false);
+      fetchInitialData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to save product', 'error');
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (filteredProducts.length === 0) {
+      showNotification('No products to export', 'warning');
+      return;
+    }
+    const headers = ['Product Name', 'SKU', 'Barcode', 'Category', 'Supplier', 'Cost Price (£)', 'Retail Price (£)', 'Stock Qty', 'Reorder Level', 'Expiry Date'];
+    const rows = filteredProducts.map(prod => [
+      `"${prod.name.replace(/"/g, '""')}"`,
+      prod.sku,
+      prod.barcode || '',
+      prod.category_name || 'N/A',
+      prod.supplier_name || 'N/A',
+      prod.cost_price,
+      prod.unit_price,
+      prod.quantity_on_hand,
+      prod.reorder_threshold,
+      prod.expiry_date ? prod.expiry_date.split('T')[0] : ''
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_catalog_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotification('Inventory CSV exported successfully!', 'success');
+  };
+
+  // Filter & Sort Logic
+  const filteredProducts = products
+    .filter(prod => {
+      const matchSearch = prod.name.toLowerCase().includes(search.toLowerCase()) || 
+                          prod.sku.toLowerCase().includes(search.toLowerCase()) || 
+                          (prod.barcode && prod.barcode.includes(search));
+      const matchCategory = selectedCategory === '' || prod.category_id === parseInt(selectedCategory);
+      const matchSupplier = selectedSupplier === '' || prod.supplier_id === parseInt(selectedSupplier);
+      return matchSearch && matchCategory && matchSupplier;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'stock-asc') return a.quantity_on_hand - b.quantity_on_hand;
+      if (sortBy === 'stock-desc') return b.quantity_on_hand - a.quantity_on_hand;
+      if (sortBy === 'price-desc') return parseFloat(b.unit_price as string) - parseFloat(a.unit_price as string);
+      return 0;
+    });
+
+  return (
+    <div className="inventory-page" style={{ padding: '8px 0 24px' }}>
+      
+      {/* Top action header */}
+      <div className="flex-space" style={{ marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Layers size={28} className="text-accent" /> Store Stock Inventory
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
+            Manage product catalog, organize reorders, and audit adjustments.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={handleExportCSV}>
+            <FileSpreadsheet size={18} /> Export Catalog
+          </button>
+          
+          <button className="btn btn-primary" onClick={handleOpenAddModal}>
+            <Plus size={18} /> Add New Product
+          </button>
+        </div>
+      </div>
+
+      {/* QUICK STOCK ADJUSTMENT INLINE FORM CARD */}
+      {isAdjModalOpen && adjProduct && (
+        <div className="glass-card inline-form-card" style={{ padding: '24px', marginBottom: '24px', position: 'relative', background: 'rgba(19, 26, 46, 0.45)' }}>
+          <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
+              <SlidersHorizontal size={20} className="text-cyan" /> 
+              Quick Stock Adjustment: {adjProduct.name}
+            </h3>
+            <button type="button" className="btn-close" onClick={() => setIsAdjModalOpen(false)}>
+              <X size={20} />
+            </button>
+          </div>
+          <form onSubmit={handleQuickAdjustmentSubmit}>
+            <div className="modal-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Current Stock</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  disabled 
+                  value={`${adjProduct.quantity_on_hand} units`} 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Adjustment Type *</label>
+                <select 
+                  className="form-select"
+                  required
+                  value={adjType}
+                  onChange={e => setAdjType(e.target.value as any)}
+                >
+                  <option value="audit">Physical Inventory Audit</option>
+                  <option value="damage">Spillage / Damage</option>
+                  <option value="loss">Theft / Discrepancy Loss</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Quantity Changed *</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  required 
+                  placeholder="e.g. 10 or -5"
+                  value={adjQty}
+                  onChange={e => setAdjQty(e.target.value)}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  Positive to add stock, negative to subtract.
+                </span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Reason / Notes</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. Broken packaging"
+                  value={adjReason}
+                  onChange={e => setAdjReason(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setIsAdjModalOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary">Adjust Stock</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ADD / EDIT PRODUCT INLINE FORM CARD */}
+      {isModalOpen && (
+        <div className="glass-card inline-form-card" style={{ padding: '24px', marginBottom: '24px', position: 'relative', background: 'rgba(19, 26, 46, 0.45)' }}>
+          <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
+              <Plus size={20} className="text-cyan" /> 
+              {editingProduct ? `Edit Product: ${editingProduct.name}` : 'Add Catalog Product'}
+            </h3>
+            <button type="button" className="btn-close" onClick={() => setIsModalOpen(false)}>
+              <X size={20} />
+            </button>
+          </div>
+          <form onSubmit={handleFormSubmit}>
+            <div className="modal-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div className="form-group span-cols" style={{ marginBottom: 0 }}>
+                <label className="form-label">Product Name *</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={formData.name} 
+                  onChange={e => setFormData({ ...formData, name: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">SKU Code *</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={formData.sku} 
+                  onChange={e => setFormData({ ...formData, sku: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">UPC Barcode</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={formData.barcode} 
+                  onChange={e => setFormData({ ...formData, barcode: e.target.value })} 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Category *</label>
+                <select 
+                  className="form-select" 
+                  value={formData.category_id} 
+                  onChange={e => setFormData({ ...formData, category_id: e.target.value })}
+                >
+                  <option value="">-- Choose Category --</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Supplier *</label>
+                <select 
+                  className="form-select" 
+                  value={formData.supplier_id} 
+                  onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}
+                >
+                  <option value="">-- Choose Supplier --</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Cost Price (£) *</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  className="form-input" 
+                  value={formData.cost_price} 
+                  onChange={e => setFormData({ ...formData, cost_price: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Retail / Unit Price (£) *</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  className="form-input" 
+                  value={formData.unit_price} 
+                  onChange={e => setFormData({ ...formData, unit_price: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Quantity on Hand *</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={formData.quantity_on_hand} 
+                  onChange={e => setFormData({ ...formData, quantity_on_hand: e.target.value })} 
+                  disabled={!!editingProduct}
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Reorder Level Threshold</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={formData.reorder_threshold} 
+                  onChange={e => setFormData({ ...formData, reorder_threshold: e.target.value })} 
+                />
+              </div>
+
+              <div className="form-group span-cols" style={{ marginBottom: 0 }}>
+                <label className="form-label">Batch Expiry Date</label>
+                <input 
+                  type="date" 
+                  className="form-input" 
+                  value={formData.expiry_date} 
+                  onChange={e => setFormData({ ...formData, expiry_date: e.target.value })} 
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary">
+                {editingProduct ? 'Save Changes' : 'Create Product'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+
+      {/* Filters toolbar */}
+      <div className="glass-card flex-space" style={{ padding: '16px', borderRadius: '12px', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '12px', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-muted)' }} />
+            <input 
+              type="text" 
+              className="form-input" 
+              style={{ paddingLeft: '36px', margin: 0, height: '40px' }} 
+              placeholder="Search by SKU, barcode, name..." 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <select 
+            className="form-select" 
+            style={{ width: '160px', margin: 0, height: '40px' }}
+            value={selectedCategory}
+            onChange={e => setSelectedCategory(e.target.value)}
+          >
+            <option value="">All Categories</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+
+          <select 
+            className="form-select" 
+            style={{ width: '160px', margin: 0, height: '40px' }}
+            value={selectedSupplier}
+            onChange={e => setSelectedSupplier(e.target.value)}
+          >
+            <option value="">All Suppliers</option>
+            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sort By:</span>
+          <select 
+            className="form-select" 
+            style={{ width: '150px', margin: 0, height: '40px' }}
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+          >
+            <option value="name">Product Name</option>
+            <option value="stock-asc">Stock (Low to High)</option>
+            <option value="stock-desc">Stock (High to Low)</option>
+            <option value="price-desc">Price (High to Low)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Inventory list table */}
+      {loading ? (
+        <div className="flex-center" style={{ minHeight: '30vh' }}><div className="spinner"></div></div>
+      ) : (
+        <div className="table-responsive glass-card" style={{ overflow: 'hidden' }}>
+          <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
+                <th style={{ padding: '16px' }}>Product Details</th>
+                <th style={{ padding: '16px' }}>SKU & Barcode</th>
+                <th style={{ padding: '16px' }}>Category</th>
+                <th style={{ padding: '16px' }}>Pricing</th>
+                <th style={{ padding: '16px' }}>Inventory Level</th>
+                <th style={{ padding: '16px' }}>Expiry Date</th>
+                <th style={{ padding: '16px', textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    No products found matching filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map(prod => {
+                  const isLowStock = prod.quantity_on_hand <= prod.reorder_threshold;
+                  const isExpired = prod.expiry_date && new Date(prod.expiry_date) < new Date();
+                  return (
+                    <tr key={prod.id} className="table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '16px' }}>
+                        <div style={{ fontWeight: 600 }}>{prod.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: #{prod.id}</div>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        <div>{prod.sku}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>UPC: {prod.barcode || 'N/A'}</div>
+                      </td>
+                      <td style={{ padding: '16px' }}>{prod.category_name || 'Unassigned'}</td>
+                      <td style={{ padding: '16px' }}>
+                        <div>Retail: {formatCurrency(prod.unit_price)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Cost: {formatCurrency(prod.cost_price)}</div>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700, color: isLowStock ? 'var(--error-rose)' : 'var(--text-primary)' }}>
+                            {prod.quantity_on_hand} units
+                          </span>
+                          {isLowStock && (
+                            <span className="badge badge-danger flex-center" style={{ gap: '4px', fontSize: '0.7rem', padding: '2px 6px' }}>
+                              <AlertCircle size={10} /> Low
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Reorder Min: {prod.reorder_threshold}</div>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        {prod.expiry_date ? (
+                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)' }}>
+                            {new Date(prod.expiry_date).toLocaleDateString()}
+                            {isExpired && <span style={{ fontSize: '0.7rem', marginLeft: '6px', fontWeight: 600 }}>(EXPIRED)</span>}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>None</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button className="btn-icon" title="Quick Adjust Stock" onClick={() => handleOpenAdjModal(prod)}>
+                            <SlidersHorizontal size={14} />
+                          </button>
+                          {user && ['admin', 'manager'].includes(user.role) && (
+                            <>
+                              <button className="btn-icon" title="Edit Catalog" onClick={() => handleOpenEditModal(prod)}>
+                                <Edit2 size={14} />
+                              </button>
+                              <button className="btn-icon text-danger" title="Delete Product" onClick={() => handleDeleteProduct(prod.id)}>
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+
+
+    </div>
+  );
+};
+export default Inventory;

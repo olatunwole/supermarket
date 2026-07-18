@@ -1,0 +1,79 @@
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Layout } from './components/Layout';
+import { Login } from './pages/Login';
+import { Dashboard } from './pages/Dashboard';
+import { Inventory } from './pages/Inventory';
+import { POS } from './pages/POS';
+import { PurchaseOrders } from './pages/PurchaseOrders';
+import { StockAdjustments } from './pages/StockAdjustments';
+import { Users } from './pages/Users';
+import { Reports } from './pages/Reports';
+import { Settings } from './pages/Settings';
+import { Financials } from './pages/Financials';
+
+function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Protected Layout Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              {/* Common dashboard access for all staff */}
+              <Route path="/" element={<Dashboard />} />
+              
+              {/* POS Sales Register Access (Cashiers, Managers, Admins) */}
+              <Route path="/pos" element={<ProtectedRoute allowedRoles={['admin', 'manager', 'cashier']} />}>
+                <Route index element={<POS />} />
+              </Route>
+              
+              {/* Inventory Management Access (Stock Clerks, Managers, Admins) */}
+              <Route path="/inventory" element={<ProtectedRoute allowedRoles={['admin', 'manager', 'stock_clerk']} />}>
+                <Route index element={<Inventory />} />
+              </Route>
+              
+              {/* Stock Adjustments Audit Access (Stock Clerks, Managers, Admins) */}
+              <Route path="/stock-adjustments" element={<ProtectedRoute allowedRoles={['admin', 'manager', 'stock_clerk']} />}>
+                <Route index element={<StockAdjustments />} />
+              </Route>
+              
+              {/* Supplier Purchase Orders Access (Stock Clerks, Managers, Admins) */}
+              <Route path="/purchase-orders" element={<ProtectedRoute allowedRoles={['admin', 'manager', 'stock_clerk']} />}>
+                <Route index element={<PurchaseOrders />} />
+              </Route>
+              
+              {/* Reports Dashboard Access (Managers, Admins) */}
+              <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin', 'manager']} />}>
+                <Route index element={<Reports />} />
+              </Route>
+
+              {/* Financials Accounting Module Access (Admins, Managers, Stock Clerks) */}
+              <Route path="/financials" element={<ProtectedRoute allowedRoles={['admin', 'manager', 'stock_clerk']} />}>
+                <Route index element={<Financials />} />
+              </Route>
+
+              {/* Staff Accounts Management Access (Admins only) */}
+              <Route path="/users" element={<ProtectedRoute allowedRoles={['admin']} />}>
+                <Route index element={<Users />} />
+              </Route>
+
+              {/* Settings Configuration Access (All logged-in staff users) */}
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+          </Route>
+
+          {/* Wildcard Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
+
+export default App;
