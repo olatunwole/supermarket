@@ -52,11 +52,11 @@ export const getProductByBarcode = async (req: AuthRequest, res: Response): Prom
 
 export const createProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   const { name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date } = req.body;
-  if (!name || !sku || unit_price == null || cost_price == null) {
-    res.status(400).json({ error: 'name, sku, unit_price and cost_price are required' }); return;
+  if (!name || unit_price == null || cost_price == null) {
+    res.status(400).json({ error: 'name, unit_price and cost_price are required' }); return;
   }
   try {
-    let finalBarcode = barcode;
+    let finalBarcode = barcode ? String(barcode).trim() : '';
     if (!finalBarcode) {
       const prefix = '200';
       let isUnique = false;
@@ -64,7 +64,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       while (!isUnique && attempts < 100) {
         const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
         const tempBarcode = prefix + randomPart;
-        const checkResult = await query('SELECT id FROM products WHERE barcode = $1', [tempBarcode]);
+        const checkResult = await query('SELECT id FROM products WHERE barcode = $1 OR sku = $1', [tempBarcode]);
         if (checkResult.rows.length === 0) {
           finalBarcode = tempBarcode;
           isUnique = true;
@@ -73,12 +73,17 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       }
     }
 
+    let finalSku = sku ? String(sku).trim() : '';
+    if (!finalSku) {
+      finalSku = finalBarcode;
+    }
+
     const result = await query(
       `INSERT INTO products (name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [name, sku, finalBarcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
+      [name, finalSku, finalBarcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
     );
-    await logAudit(req, 'CREATE_PRODUCT', `Created product ${name} (${sku})`);
+    await logAudit(req, 'CREATE_PRODUCT', `Created product ${name} (${finalSku})`);
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') { res.status(409).json({ error: 'SKU or barcode already exists' }); return; }

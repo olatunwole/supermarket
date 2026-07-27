@@ -114,6 +114,38 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const generateRandomSku = () => {
+    if (formData.barcode) {
+      setFormData(prev => ({ ...prev, sku: prev.barcode }));
+      showNotification('SKU matched to active barcode', 'success');
+      return;
+    }
+
+    const prefix = '200';
+    let newSku = '';
+    let isUnique = false;
+    let attempts = 0;
+    
+    while (!isUnique && attempts < 100) {
+      const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+      const tempSku = prefix + randomPart;
+      
+      const exists = products.some(p => p.sku === tempSku || p.barcode === tempSku);
+      if (!exists) {
+        newSku = tempSku;
+        isUnique = true;
+      }
+      attempts++;
+    }
+    
+    if (newSku) {
+      setFormData(prev => ({ ...prev, sku: newSku, barcode: formData.barcode || newSku }));
+      showNotification('Unique SKU generated and linked to barcode', 'success');
+    } else {
+      showNotification('Failed to generate a unique SKU. Try again.', 'error');
+    }
+  };
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
@@ -226,30 +258,41 @@ export const Inventory: React.FC = () => {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.sku || !formData.unit_price || !formData.cost_price) {
-      showNotification('Please fill in all required fields', 'warning');
+    if (!formData.name || !formData.unit_price || !formData.cost_price) {
+      showNotification('Please fill in Name, Cost Price, and Retail Price', 'warning');
       return;
     }
 
     let finalBarcode = formData.barcode;
-    if (!editingProduct && !finalBarcode) {
-      const prefix = '200';
-      let isUnique = false;
-      let attempts = 0;
-      while (!isUnique && attempts < 100) {
-        const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
-        const tempBarcode = prefix + randomPart;
-        const exists = products.some(p => p.barcode === tempBarcode);
-        if (!exists) {
-          finalBarcode = tempBarcode;
-          isUnique = true;
+    let finalSku = formData.sku;
+
+    if (!editingProduct) {
+      // 1. Generate barcode if missing
+      if (!finalBarcode) {
+        const prefix = '200';
+        let isUnique = false;
+        let attempts = 0;
+        while (!isUnique && attempts < 100) {
+          const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+          const tempBarcode = prefix + randomPart;
+          const exists = products.some(p => p.barcode === tempBarcode || p.sku === tempBarcode);
+          if (!exists) {
+            finalBarcode = tempBarcode;
+            isUnique = true;
+          }
+          attempts++;
         }
-        attempts++;
+      }
+
+      // 2. Generate SKU if missing
+      if (!finalSku) {
+        finalSku = finalBarcode;
       }
     }
 
     const payload = {
       ...formData,
+      sku: finalSku,
       barcode: finalBarcode || null,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
       supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
@@ -664,14 +707,33 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">SKU Code *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={formData.sku} 
-                  onChange={e => setFormData({ ...formData, sku: e.target.value })} 
-                  required 
-                />
+                <label className="form-label">SKU Code</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={formData.sku} 
+                    onChange={e => setFormData({ ...formData, sku: e.target.value })} 
+                    placeholder="Auto-generated if empty"
+                    style={{ flexGrow: 1 }}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={generateRandomSku}
+                    style={{ 
+                      padding: '0 12px', 
+                      fontSize: '0.8rem', 
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      height: '40px'
+                    }}
+                  >
+                    <BarcodeIcon size={14} />
+                    Generate
+                  </button>
+                </div>
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
