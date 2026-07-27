@@ -10,9 +10,11 @@ import {
   SlidersHorizontal,
   FileSpreadsheet,
   Layers,
+  Upload,
   Barcode as BarcodeIcon
 } from 'lucide-react';
 import { Barcode } from '../components/Barcode';
+import * as XLSX from 'xlsx';
 
 interface Product {
   id: number;
@@ -51,6 +53,9 @@ export const Inventory: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [barcodeModalProduct, setBarcodeModalProduct] = useState<Product | null>(null);
   const [labelType, setLabelType] = useState<'barcode' | 'qrcode'>('barcode');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importRows, setImportRows] = useState<any[]>([]);
+  const [importProgress, setImportProgress] = useState(false);
 
   // Quick stock adjustment state
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
@@ -304,6 +309,201 @@ export const Inventory: React.FC = () => {
     showNotification('Inventory CSV exported successfully!', 'success');
   };
 
+  const handleDownloadTemplate = () => {
+    const headers = [
+      'Name',
+      'SKU',
+      'Barcode',
+      'Category',
+      'Unit Price',
+      'Cost Price',
+      'Quantity On Hand',
+      'Reorder Threshold',
+      'Supplier',
+      'Expiry Date (YYYY-MM-DD)'
+    ];
+    const sampleData = [
+      [
+        'Fresh Organic Strawberries 400g',
+        'PRD-STW',
+        '5000112637990',
+        'Fruits & Vegetables',
+        '2.99',
+        '1.50',
+        '40',
+        '10',
+        'Fresh Farms Ltd',
+        '2026-08-10'
+      ],
+      [
+        'Whole Milk 2L',
+        'PRD-002',
+        '5000112637923',
+        'Dairy & Eggs',
+        '1.55',
+        '0.85',
+        '100',
+        '20',
+        'Metro Wholesale',
+        '2026-08-15'
+      ]
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
+    XLSX.writeFile(workbook, 'supermarket_inventory_template.xlsx');
+    showNotification('Template downloaded successfully!', 'success');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        const rows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        if (rows.length === 0) {
+          showNotification('The uploaded file is empty.', 'error');
+          return;
+        }
+
+        const headers = rows[0].map((h: any) => String(h || '').trim());
+        const dataRows = rows.slice(1);
+
+        const findHeaderIdx = (patterns: string[], excludePatterns: string[] = []) => {
+          return headers.findIndex(h => {
+            const hLower = h.toLowerCase();
+            const matchesPattern = patterns.some(p => hLower.includes(p.toLowerCase()));
+            const matchesExclude = excludePatterns.some(p => hLower.includes(p.toLowerCase()));
+            return matchesPattern && !matchesExclude;
+          });
+        };
+
+        const idxName = findHeaderIdx(['name']);
+        const idxSku = findHeaderIdx(['sku']);
+        const idxBarcode = findHeaderIdx(['barcode', 'upc', 'ean']);
+        const idxCategory = findHeaderIdx(['category', 'cat']);
+        const idxUnitPrice = findHeaderIdx(['unit price', 'unitprice', 'price', 'retail'], ['cost price', 'costprice']);
+        const idxCostPrice = findHeaderIdx(['cost price', 'costprice', 'cost']);
+        const idxQty = findHeaderIdx(['quantity', 'qty', 'stock']);
+        const idxReorder = findHeaderIdx(['reorder', 'threshold', 'limit']);
+        const idxSupplier = findHeaderIdx(['supplier', 'vendor']);
+        const idxExpiry = findHeaderIdx(['expiry', 'expire', 'exp']);
+
+        if (idxName === -1 || idxSku === -1 || idxUnitPrice === -1 || idxCostPrice === -1) {
+          showNotification('Required columns missing. Template must contain Name, SKU, Unit Price, and Cost Price.', 'error');
+          return;
+        }
+
+        const parseNumeric = (val: any): number => {
+          if (val == null) return NaN;
+          if (typeof val === 'number') return val;
+          const cleaned = String(val).replace(/[^\d.-]/g, '');
+          return parseFloat(cleaned);
+        };
+
+        const parseDateString = (val: any): string | null => {
+          if (!val) return null;
+          if (val instanceof Date) {
+            return val.toISOString().split('T')[0];
+          }
+          if (typeof val === 'number') {
+            const date = new Date((val - 25569) * 86400 * 1000);
+            return date.toISOString().split('T')[0];
+          }
+          const match = String(val).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+          if (match) {
+            const y = match[1];
+            const m = match[2].padStart(2, '0');
+            const d = match[3].padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          }
+          return null;
+        };
+
+        const parsedRows = dataRows.map((row, index) => {
+          const name = row[idxName] ? String(row[idxName]).trim() : '';
+          const sku = row[idxSku] ? String(row[idxSku]).trim() : '';
+          const barcode = idxBarcode !== -1 && row[idxBarcode] ? String(row[idxBarcode]).trim() : '';
+          const category = idxCategory !== -1 && row[idxCategory] ? String(row[idxCategory]).trim() : '';
+          const unitPriceVal = idxUnitPrice !== -1 ? parseNumeric(row[idxUnitPrice]) : NaN;
+          const costPriceVal = idxCostPrice !== -1 ? parseNumeric(row[idxCostPrice]) : NaN;
+          const quantityVal = idxQty !== -1 && row[idxQty] != null ? parseNumeric(row[idxQty]) : 0;
+          const reorderVal = idxReorder !== -1 && row[idxReorder] != null ? parseNumeric(row[idxReorder]) : 10;
+          const supplier = idxSupplier !== -1 && row[idxSupplier] ? String(row[idxSupplier]).trim() : '';
+          const expiryDate = idxExpiry !== -1 && row[idxExpiry] ? parseDateString(row[idxExpiry]) : null;
+
+          const errors: string[] = [];
+          if (!name) errors.push('Name is required');
+          if (!sku) errors.push('SKU is required');
+          if (isNaN(unitPriceVal) || unitPriceVal < 0) errors.push('Unit Price must be a valid positive number');
+          if (isNaN(costPriceVal) || costPriceVal < 0) errors.push('Cost Price must be a valid positive number');
+
+          return {
+            rowNum: index + 2,
+            data: {
+              name,
+              sku,
+              barcode: barcode || null,
+              category: category || null,
+              unit_price: unitPriceVal,
+              cost_price: costPriceVal,
+              quantity_on_hand: isNaN(quantityVal) ? 0 : Math.round(quantityVal),
+              reorder_threshold: isNaN(reorderVal) ? 10 : Math.round(reorderVal),
+              supplier: supplier || null,
+              expiry_date: expiryDate || null
+            },
+            isValid: errors.length === 0,
+            errors
+          };
+        }).filter(r => r.data.name || r.data.sku);
+
+        setImportRows(parsedRows);
+      } catch (err) {
+        console.error(err);
+        showNotification('Failed to read Excel file. Make sure it is in valid XLSX format.', 'error');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleSubmitImport = async () => {
+    const validData = importRows.filter(r => r.isValid).map(r => r.data);
+    if (validData.length === 0) {
+      showNotification('No valid rows to import.', 'warning');
+      return;
+    }
+
+    setImportProgress(true);
+    try {
+      const res = await apiFetch<{ success: boolean; count: number }>('/api/products/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validData)
+      });
+      if (res && res.success) {
+        showNotification(`Successfully imported/updated ${res.count} products!`, 'success');
+        setIsImportModalOpen(false);
+        setImportRows([]);
+        setLoading(true);
+        const updated = await apiFetch<Product[]>('/api/products');
+        setProducts(updated);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      showNotification(err.message || 'Import failed', 'error');
+    } finally {
+      setImportProgress(false);
+    }
+  };
+
   // Filter & Sort Logic
   const filteredProducts = products
     .filter(prod => {
@@ -337,6 +537,10 @@ export const Inventory: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={() => setIsImportModalOpen(true)}>
+            <Upload size={18} /> Bulk Import
+          </button>
+
           <button className="btn btn-secondary" onClick={handleExportCSV}>
             <FileSpreadsheet size={18} /> Export Catalog
           </button>
@@ -805,6 +1009,113 @@ export const Inventory: React.FC = () => {
                 window.print();
               }}>
                 Print Label
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isImportModalOpen && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1100 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '750px', width: '95%', padding: '24px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Upload size={20} className="text-accent" /> Bulk Import Catalog
+              </h3>
+              <button type="button" className="btn-close" onClick={() => { setIsImportModalOpen(false); setImportRows([]); }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px dashed var(--glass-border)', marginBottom: '16px', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>
+                  Download the Excel template to ensure your spreadsheet column headers match our import schema.
+                </p>
+                <button type="button" className="btn btn-secondary" onClick={handleDownloadTemplate} style={{ margin: '0 auto' }}>
+                  <FileSpreadsheet size={16} /> Download Template (.xlsx)
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label className="form-label">Upload Spreadsheet (XLSX)</label>
+                <input 
+                  type="file" 
+                  accept=".xlsx" 
+                  className="form-input" 
+                  onChange={handleFileUpload} 
+                  style={{ paddingTop: '8px' }} 
+                />
+              </div>
+
+              {importRows.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '0.95rem', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Parsed Rows ({importRows.length})</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {importRows.filter(r => r.isValid).length} Valid | {importRows.filter(r => !r.isValid).length} Invalid
+                    </span>
+                  </h4>
+
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--glass-border)', borderRadius: '6px', maxHeight: '250px' }}>
+                    <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <th style={{ padding: '8px 12px' }}>Row</th>
+                          <th style={{ padding: '8px 12px' }}>SKU</th>
+                          <th style={{ padding: '8px 12px' }}>Name</th>
+                          <th style={{ padding: '8px 12px' }}>Category</th>
+                          <th style={{ padding: '8px 12px' }}>Prices ({currency})</th>
+                          <th style={{ padding: '8px 12px' }}>Stock</th>
+                          <th style={{ padding: '8px 12px' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importRows.map((r, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)', background: r.isValid ? 'rgba(16, 185, 129, 0.03)' : 'rgba(239, 68, 68, 0.03)' }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{r.rowNum}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: 600 }}>{r.data.sku || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                            <td style={{ padding: '8px 12px' }}>{r.data.name || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.data.category || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              Cost: {isNaN(r.data.cost_price) ? '-' : formatCurrency(r.data.cost_price)}<br />
+                              Retail: {isNaN(r.data.unit_price) ? '-' : formatCurrency(r.data.unit_price)}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>{r.data.quantity_on_hand}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {r.isValid ? (
+                                <span style={{ color: 'var(--emerald-green)', fontWeight: 500 }}>Ready</span>
+                              ) : (
+                                <span style={{ color: 'var(--error-rose)' }} title={r.errors.join(', ')}>
+                                  Error: {r.errors[0]}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => { setIsImportModalOpen(false); setImportRows([]); }}
+                disabled={importProgress}
+              >
+                Close
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={handleSubmitImport}
+                disabled={importRows.length === 0 || importRows.filter(r => r.isValid).length === 0 || importProgress}
+              >
+                {importProgress ? 'Importing...' : `Import ${importRows.filter(r => r.isValid).length} Products`}
               </button>
             </div>
           </div>
