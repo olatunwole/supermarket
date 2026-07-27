@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   Search, 
@@ -32,6 +32,44 @@ interface CartItem {
   discount: number; // custom flat discount for this line item in GBP
 }
 
+const extractProductCode = (text: string): string => {
+  if (!text) return '';
+  let cleaned = text.trim();
+  
+  // Handle URL or path formats (e.g., http://.../5000112637922 or /products/PRD-001)
+  try {
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.includes('/')) {
+      const url = new URL(cleaned.startsWith('http') ? cleaned : `http://${cleaned}`);
+      // Check query parameters first
+      const queryVal = url.searchParams.get('barcode') || 
+                       url.searchParams.get('sku') || 
+                       url.searchParams.get('code') || 
+                       url.searchParams.get('id') || 
+                       url.searchParams.get('product');
+      if (queryVal) {
+        return queryVal.trim();
+      }
+      
+      // Get the last non-empty path segment
+      const segments = url.pathname.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        return segments[segments.length - 1].trim();
+      }
+    }
+  } catch (err) {
+    // URL parsing failed, fallback to manual splitting
+  }
+  
+  if (cleaned.includes('/')) {
+    const segments = cleaned.split('/').filter(Boolean);
+    if (segments.length > 0) {
+      return segments[segments.length - 1].trim();
+    }
+  }
+
+  return cleaned;
+};
+
 export const POS: React.FC = () => {
   const { apiFetch, showNotification, formatCurrency, convertToBase, convertToActive, currency, storeSettings } = useAuth();
   
@@ -54,6 +92,8 @@ export const POS: React.FC = () => {
   // Camera Barcode Scanner State
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const startTimeoutRef = useRef<any>(null);
+  const activeStartPromiseRef = useRef<Promise<any> | null>(null);
 
   // Mobile Scanner pairing states
   const [sessionId] = useState(() => 'reg-' + Math.random().toString(36).substring(2, 11));
@@ -81,61 +121,109 @@ export const POS: React.FC = () => {
   };
 
   const stopScanner = async () => {
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+    }
+
     if (scannerRef.current) {
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
+        if (scanner.isScanning) {
+          await scanner.stop();
+        } else if (activeStartPromiseRef.current) {
+          await activeStartPromiseRef.current;
+          await scanner.stop();
         }
       } catch (err) {
         console.error('Error stopping scanner:', err);
       }
-      scannerRef.current = null;
     }
   };
 
   const startScanner = () => {
+    // Detect secure context issue
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      showNotification("Camera access requires a secure connection (HTTPS) or localhost.", "error");
+      setIsScannerOpen(false);
+      return;
+    }
+
     setIsScannerOpen(true);
-    setTimeout(() => {
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+    }
+
+    startTimeoutRef.current = setTimeout(() => {
       try {
         const html5Qrcode = new Html5Qrcode("pos-camera-reader");
         scannerRef.current = html5Qrcode;
         
-        html5Qrcode.start(
-          { facingMode: "environment" },
-          {
-            fps: 15,
-            qrbox: (width, height) => {
-              // Wide aspect ratio box ideal for horizontal barcodes
-              const boxWidth = Math.min(width * 0.85, 280);
-              const boxHeight = Math.min(height * 0.35, 90);
-              return { width: boxWidth, height: boxHeight };
+        const startCameraWithFallback = (facingMode: "environment" | "user") => {
+          const startPromise = html5Qrcode.start(
+            { facingMode: facingMode },
+            {
+              fps: 15,
+              qrbox: (width, height) => {
+                const size = Math.min(width, height) * 0.75;
+                const boxSize = Math.max(Math.min(size, 260), 180);
+                return { width: boxSize, height: boxSize };
+              }
             },
-            aspectRatio: 1.777778
-          },
-          (decodedText) => {
-            playScanBeep();
-            
-            // Look for matching product
-            const targetProd = products.find(p => p.barcode === decodedText || p.sku === decodedText);
-            if (targetProd) {
-              addToCart(targetProd);
-              showNotification(`Scanned: ${targetProd.name}`, 'success');
-            } else {
-              showNotification(`Barcode ${decodedText} not found in inventory`, 'warning');
+            (decodedText) => {
+              playScanBeep();
+              
+              const cleanedCode = extractProductCode(decodedText);
+              // Look for matching product
+              const targetProd = products.find(p => 
+                (p.barcode && p.barcode === cleanedCode) || 
+                p.sku.toLowerCase() === cleanedCode.toLowerCase() ||
+                String(p.id) === cleanedCode
+              );
+              if (targetProd) {
+                addToCart(targetProd);
+                showNotification(`Scanned: ${targetProd.name}`, 'success');
+              } else {
+                showNotification(`Barcode ${decodedText} not found in inventory`, 'warning');
+              }
+              
+              stopScanner();
+              setIsScannerOpen(false);
+            },
+            () => {
+              // Keep scanning silently
             }
-            
-            stopScanner();
-            setIsScannerOpen(false);
-          },
-          () => {
-            // Keep scanning silently
-          }
-        ).catch(err => {
-          console.error("Camera start failure:", err);
-          showNotification("Camera access denied or busy.", "error");
-          setIsScannerOpen(false);
-        });
+          );
+
+          activeStartPromiseRef.current = startPromise;
+
+          startPromise.then(() => {
+            activeStartPromiseRef.current = null;
+            if (scannerRef.current !== html5Qrcode) {
+              html5Qrcode.stop().catch(err => console.error("Error stopping late-started camera:", err));
+            }
+          }).catch(err => {
+            activeStartPromiseRef.current = null;
+            if (scannerRef.current !== html5Qrcode) return;
+
+            // Fallback strategy if environment fails
+            if (facingMode === "environment") {
+              console.log("Environment camera failed, falling back to user camera...");
+              startCameraWithFallback("user");
+            } else {
+              console.error("Camera start failure:", err);
+              showNotification("Camera access denied or busy.", "error");
+              setIsScannerOpen(false);
+            }
+          });
+        };
+
+        // Initialize with environment/back camera first
+        startCameraWithFallback("environment");
+
       } catch (err: any) {
+        if (scannerRef.current) scannerRef.current = null;
         console.error("Scanner initialization failed:", err);
         showNotification("Failed to boot camera scanner.", "error");
         setIsScannerOpen(false);
@@ -164,6 +252,32 @@ export const POS: React.FC = () => {
     loadProducts();
   }, []);
 
+  const addToCart = useCallback((product: Product) => {
+    if (product.quantity_on_hand <= 0) {
+      showNotification(`${product.name} is out of stock`, 'warning');
+      return;
+    }
+
+    setCart(prevCart => {
+      const existingIndex = prevCart.findIndex(item => item.product.id === product.id);
+      if (existingIndex > -1) {
+        const currentQty = prevCart[existingIndex].quantity;
+        if (currentQty >= product.quantity_on_hand) {
+          showNotification(`Cannot add more. Only ${product.quantity_on_hand} available.`, 'warning');
+          return prevCart;
+        }
+        const updated = [...prevCart];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: updated[existingIndex].quantity + 1
+        };
+        return updated;
+      } else {
+        return [...prevCart, { product, quantity: 1, discount: 0 }];
+      }
+    });
+  }, [showNotification]);
+
   // Background polling for mobile companion camera scans
   useEffect(() => {
     let intervalId: any;
@@ -172,14 +286,19 @@ export const POS: React.FC = () => {
       try {
         const res = await apiFetch<{ scans: string[] }>(`/api/sales/scan-session/${sessionId}/pending`);
         if (res && res.scans && res.scans.length > 0) {
-          res.scans.forEach(barcode => {
-            const targetProd = products.find(p => p.barcode === barcode || p.sku === barcode);
+          res.scans.forEach(scannedText => {
+            const cleanedCode = extractProductCode(scannedText);
+            const targetProd = products.find(p => 
+              (p.barcode && p.barcode === cleanedCode) || 
+              p.sku.toLowerCase() === cleanedCode.toLowerCase() ||
+              String(p.id) === cleanedCode
+            );
             if (targetProd) {
               addToCart(targetProd);
               playScanBeep();
               showNotification(`Mobile Scanned: ${targetProd.name}`, 'success');
             } else {
-              showNotification(`Scanned barcode ${barcode} not found`, 'warning');
+              showNotification(`Scanned barcode ${scannedText} not found`, 'warning');
             }
           });
         }
@@ -190,7 +309,7 @@ export const POS: React.FC = () => {
 
     intervalId = setInterval(pollPendingScans, 1500);
     return () => clearInterval(intervalId);
-  }, [sessionId, products]);
+  }, [sessionId, products, addToCart]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -198,9 +317,11 @@ export const POS: React.FC = () => {
       const queryStr = search.trim();
       if (!queryStr) return;
 
+      const cleanedCode = extractProductCode(queryStr);
       const exactMatch = products.find(p => 
-        (p.barcode && p.barcode === queryStr) || 
-        p.sku.toLowerCase() === queryStr.toLowerCase()
+        (p.barcode && p.barcode === cleanedCode) || 
+        p.sku.toLowerCase() === cleanedCode.toLowerCase() ||
+        String(p.id) === cleanedCode
       );
 
       if (exactMatch) {
@@ -210,27 +331,6 @@ export const POS: React.FC = () => {
         addToCart(filteredProducts[0]);
         setSearch('');
       }
-    }
-  };
-
-  const addToCart = (product: Product) => {
-    if (product.quantity_on_hand <= 0) {
-      showNotification(`${product.name} is out of stock`, 'warning');
-      return;
-    }
-
-    const existingIndex = cart.findIndex(item => item.product.id === product.id);
-    if (existingIndex > -1) {
-      const currentQty = cart[existingIndex].quantity;
-      if (currentQty >= product.quantity_on_hand) {
-        showNotification(`Cannot add more. Only ${product.quantity_on_hand} available.`, 'warning');
-        return;
-      }
-      const updated = [...cart];
-      updated[existingIndex].quantity += 1;
-      setCart(updated);
-    } else {
-      setCart([...cart, { product, quantity: 1, discount: 0 }]);
     }
   };
 
@@ -334,11 +434,16 @@ export const POS: React.FC = () => {
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.sku.toLowerCase().includes(search.toLowerCase()) ||
-    (p.barcode && p.barcode.includes(search))
-  );
+  const filteredProducts = products.filter(p => {
+    const cleanedSearch = extractProductCode(search);
+    return (
+      p.name.toLowerCase().includes(search.toLowerCase()) || 
+      p.sku.toLowerCase().includes(search.toLowerCase()) ||
+      (p.barcode && p.barcode.includes(search)) ||
+      (p.barcode && cleanedSearch && p.barcode.includes(cleanedSearch)) ||
+      (p.sku && cleanedSearch && p.sku.toLowerCase().includes(cleanedSearch.toLowerCase()))
+    );
+  });
 
   const { subtotal, taxAmt, finalTotal } = calculateTotals();
 
@@ -706,9 +811,15 @@ export const POS: React.FC = () => {
               />
             </div>
 
-            <div style={{ wordBreak: 'break-all', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '20px', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px' }}>
+            <div style={{ wordBreak: 'break-all', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '12px', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px' }}>
               URL: {window.location.origin}/scan-companion?session={sessionId}
             </div>
+
+            {window.location.hostname === 'localhost' && (
+              <p style={{ fontSize: '0.75rem', color: 'var(--warning-amber)', marginBottom: '20px', lineHeight: '1.4' }}>
+                <strong>Tip for phone connection:</strong> Your mobile phone cannot connect to "localhost". Please access the POS Register using your computer's local IP address (e.g., <code>http://192.168.1.X:5173</code>) in your PC browser to generate a scannable network QR code.
+              </p>
+            )}
 
             <button 
               type="button" 

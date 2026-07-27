@@ -50,6 +50,7 @@ export const Inventory: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [barcodeModalProduct, setBarcodeModalProduct] = useState<Product | null>(null);
+  const [labelType, setLabelType] = useState<'barcode' | 'qrcode'>('barcode');
 
   // Quick stock adjustment state
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
@@ -701,7 +702,7 @@ export const Inventory: React.FC = () => {
                             <SlidersHorizontal size={14} />
                           </button>
                           {prod.barcode && (
-                            <button className="btn-icon" title="View & Print Barcode Label" onClick={() => setBarcodeModalProduct(prod)}>
+                            <button className="btn-icon" title="View & Print Barcode Label" onClick={() => { setBarcodeModalProduct(prod); setLabelType('barcode'); }}>
                               <BarcodeIcon size={14} />
                             </button>
                           )}
@@ -730,9 +731,28 @@ export const Inventory: React.FC = () => {
         <div className="modal-backdrop flex-center" style={{ zIndex: 1000 }}>
           <div className="modal-content glass-card" style={{ maxWidth: '400px', padding: '24px' }}>
             <div className="modal-header">
-              <h3>Barcode Label</h3>
+              <h3>{labelType === 'barcode' ? 'Barcode Label' : 'QR Code Label'}</h3>
               <button type="button" className="btn-close" onClick={() => setBarcodeModalProduct(null)}>
                 <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <button 
+                type="button" 
+                className={`btn ${labelType === 'barcode' ? 'btn-primary' : 'btn-secondary'}`} 
+                style={{ flex: 1, padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={() => setLabelType('barcode')}
+              >
+                Barcode
+              </button>
+              <button 
+                type="button" 
+                className={`btn ${labelType === 'qrcode' ? 'btn-primary' : 'btn-secondary'}`} 
+                style={{ flex: 1, padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={() => setLabelType('qrcode')}
+              >
+                QR Code
               </button>
             </div>
             
@@ -751,15 +771,27 @@ export const Inventory: React.FC = () => {
               <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                 {barcodeModalProduct.name}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
-                <Barcode 
-                  value={barcodeModalProduct.barcode || ''} 
-                  lineColor="#000000" 
-                  background="#ffffff"
-                  width={1.8}
-                  height={60}
-                />
-              </div>
+              
+              {labelType === 'barcode' ? (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+                  <Barcode 
+                    value={barcodeModalProduct.barcode || ''} 
+                    lineColor="#000000" 
+                    background="#ffffff"
+                    width={1.8}
+                    height={60}
+                  />
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(barcodeModalProduct.barcode || barcodeModalProduct.sku)}`}
+                    alt="Product QR Code Label"
+                    style={{ width: '120px', height: '120px', display: 'block' }}
+                  />
+                </div>
+              )}
+              
               <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', marginTop: '8px' }}>
                 {formatCurrency(barcodeModalProduct.unit_price)}
               </div>

@@ -2,6 +2,44 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, Check, AlertCircle, X, Smartphone, List } from 'lucide-react';
 
+const extractProductCode = (text: string): string => {
+  if (!text) return '';
+  let cleaned = text.trim();
+  
+  // Handle URL or path formats (e.g., http://.../5000112637922 or /products/PRD-001)
+  try {
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.includes('/')) {
+      const url = new URL(cleaned.startsWith('http') ? cleaned : `http://${cleaned}`);
+      // Check query parameters first
+      const queryVal = url.searchParams.get('barcode') || 
+                       url.searchParams.get('sku') || 
+                       url.searchParams.get('code') || 
+                       url.searchParams.get('id') || 
+                       url.searchParams.get('product');
+      if (queryVal) {
+        return queryVal.trim();
+      }
+      
+      // Get the last non-empty path segment
+      const segments = url.pathname.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        return segments[segments.length - 1].trim();
+      }
+    }
+  } catch (err) {
+    // URL parsing failed, fallback to manual splitting
+  }
+  
+  if (cleaned.includes('/')) {
+    const segments = cleaned.split('/').filter(Boolean);
+    if (segments.length > 0) {
+      return segments[segments.length - 1].trim();
+    }
+  }
+
+  return cleaned;
+};
+
 export const ScanCompanion: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [scanHistory, setScanHistory] = useState<{ time: string; barcode: string; status: 'sending' | 'sent' | 'error' }[]>([]);
@@ -9,6 +47,8 @@ export const ScanCompanion: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const startTimeoutRef = useRef<any>(null);
+  const activeStartPromiseRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -43,43 +83,53 @@ export const ScanCompanion: React.FC = () => {
     }
   };
 
-  const transmitScan = async (barcode: string) => {
+  const transmitScan = async (rawBarcode: string) => {
     if (!sessionId) return;
-    
+
+    const cleanedCode = extractProductCode(rawBarcode);
     const timestamp = new Date().toLocaleTimeString();
-    const newEntry = { time: timestamp, barcode, status: 'sending' as const };
+    const newEntry = { time: timestamp, barcode: cleanedCode, status: 'sending' as const };
     setScanHistory(prev => [newEntry, ...prev]);
 
     try {
       const response = await fetch(`/api/sales/scan-session/${sessionId}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ barcode })
+        body: JSON.stringify({ barcode: cleanedCode })
       });
 
       if (!response.ok) throw new Error('Transmission failed');
       
       setScanHistory(prev => 
-        prev.map(item => item.barcode === barcode && item.time === timestamp ? { ...item, status: 'sent' as const } : item)
+         prev.map(item => item.barcode === cleanedCode && item.time === timestamp ? { ...item, status: 'sent' as const } : item)
       );
       playCompanionBeep();
     } catch (err) {
       setScanHistory(prev => 
-        prev.map(item => item.barcode === barcode && item.time === timestamp ? { ...item, status: 'error' as const } : item)
+         prev.map(item => item.barcode === cleanedCode && item.time === timestamp ? { ...item, status: 'error' as const } : item)
       );
     }
   };
 
   const stopCamera = async () => {
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+    }
+
     if (scannerRef.current) {
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
+        if (scanner.isScanning) {
+          await scanner.stop();
+        } else if (activeStartPromiseRef.current) {
+          await activeStartPromiseRef.current;
+          await scanner.stop();
         }
       } catch (err) {
         console.error('Error stopping companion scanner:', err);
       }
-      scannerRef.current = null;
     }
     setStatus('idle');
   };
@@ -87,36 +137,72 @@ export const ScanCompanion: React.FC = () => {
   const startCamera = () => {
     if (!sessionId) return;
     
+    // Clear any pending timeout or active camera before starting a new one
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+    }
+    setErrorMsg('');
+
+    // Detect secure context issue
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      setErrorMsg("Camera access requires a secure connection (HTTPS) or localhost. Please access via HTTPS or configure browser flags.");
+      setStatus('idle');
+      return;
+    }
+
     setStatus('scanning');
-    setTimeout(() => {
+    startTimeoutRef.current = setTimeout(() => {
       try {
         const html5Qrcode = new Html5Qrcode("companion-reader");
         scannerRef.current = html5Qrcode;
 
-        html5Qrcode.start(
-          { facingMode: "environment" },
-          {
-            fps: 12,
-            qrbox: (width, height) => {
-              // Target scanbox size for standard mobile screen widths
-              const boxWidth = Math.min(width * 0.8, 280);
-              const boxHeight = Math.min(height * 0.35, 90);
-              return { width: boxWidth, height: boxHeight };
+        const startCameraWithFallback = (facingMode: "environment" | "user") => {
+          const startPromise = html5Qrcode.start(
+            { facingMode: facingMode },
+            {
+              fps: 12,
+              qrbox: (width, height) => {
+                const size = Math.min(width, height) * 0.75;
+                const boxSize = Math.max(Math.min(size, 260), 180);
+                return { width: boxSize, height: boxSize };
+              }
             },
-            aspectRatio: 1.333333
-          },
-          (decodedText) => {
-            transmitScan(decodedText);
-          },
-          () => {
-            // Scan loop running
-          }
-        ).catch(err => {
-          console.error("Camera start failure:", err);
-          setErrorMsg("Camera access denied or busy. Check permissions.");
-          setStatus('idle');
-        });
+            (decodedText) => {
+              transmitScan(decodedText);
+            },
+            () => {
+              // Scan loop running
+            }
+          );
+
+          activeStartPromiseRef.current = startPromise;
+
+          startPromise.then(() => {
+            activeStartPromiseRef.current = null;
+            if (scannerRef.current !== html5Qrcode) {
+              html5Qrcode.stop().catch(err => console.error("Error stopping late-started camera:", err));
+            }
+          }).catch(err => {
+            activeStartPromiseRef.current = null;
+            if (scannerRef.current !== html5Qrcode) return;
+
+            // Fallback strategy if environment fails
+            if (facingMode === "environment") {
+              console.log("Companion environment camera failed, falling back to user camera...");
+              startCameraWithFallback("user");
+            } else {
+              console.error("Camera start failure:", err);
+              setErrorMsg("Camera access denied or busy. Check permissions.");
+              setStatus('idle');
+            }
+          });
+        };
+
+        // Initialize with environment/back camera first
+        startCameraWithFallback("environment");
+
       } catch (err: any) {
+        if (scannerRef.current) scannerRef.current = null;
         console.error("Scanner initialization failed:", err);
         setErrorMsg("Failed to start camera feed.");
         setStatus('idle');
