@@ -44,7 +44,7 @@ interface Supplier {
 }
 
 export const Inventory: React.FC = () => {
-  const { apiFetch, showNotification, user, formatCurrency, currency, storeSettings } = useAuth();
+  const { apiFetch, showNotification, user, formatCurrency, currency, storeSettings, rates } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -229,13 +229,16 @@ export const Inventory: React.FC = () => {
 
   const handleOpenEditModal = (prod: Product) => {
     setEditingProduct(prod);
+    const activeRate = rates[currency] || 1;
+    const activeCostPrice = (parseFloat(prod.cost_price as string) * activeRate).toFixed(2);
+    const activeUnitPrice = (parseFloat(prod.unit_price as string) * activeRate).toFixed(2);
     setFormData({
       name: prod.name,
       sku: prod.sku,
       barcode: prod.barcode || '',
       category_id: prod.category_id?.toString() || '',
-      unit_price: prod.unit_price.toString(),
-      cost_price: prod.cost_price.toString(),
+      unit_price: activeUnitPrice,
+      cost_price: activeCostPrice,
       quantity_on_hand: prod.quantity_on_hand.toString(),
       reorder_threshold: prod.reorder_threshold.toString(),
       supplier_id: prod.supplier_id?.toString() || '',
@@ -290,14 +293,18 @@ export const Inventory: React.FC = () => {
       }
     }
 
+    const activeRate = rates[currency] || 1;
+    const gbpCostPrice = parseFloat(formData.cost_price) / activeRate;
+    const gbpUnitPrice = parseFloat(formData.unit_price) / activeRate;
+
     const payload = {
       ...formData,
       sku: finalSku,
       barcode: finalBarcode || null,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
       supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
-      unit_price: parseFloat(formData.unit_price),
-      cost_price: parseFloat(formData.cost_price),
+      unit_price: gbpUnitPrice,
+      cost_price: gbpCostPrice,
       quantity_on_hand: parseInt(formData.quantity_on_hand),
       reorder_threshold: parseInt(formData.reorder_threshold),
       expiry_date: formData.expiry_date || null
@@ -800,7 +807,7 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Cost Price (£) *</label>
+                <label className="form-label">Cost Price ({currency}) *</label>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -812,7 +819,7 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Retail / Unit Price (£) *</label>
+                <label className="form-label">Retail / Unit Price ({currency}) *</label>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -932,8 +939,10 @@ export const Inventory: React.FC = () => {
                 <th style={{ padding: '16px' }}>Product Details</th>
                 <th style={{ padding: '16px' }}>SKU & Barcode</th>
                 <th style={{ padding: '16px' }}>Category</th>
-                <th style={{ padding: '16px' }}>Pricing</th>
-                <th style={{ padding: '16px' }}>Inventory Level</th>
+                <th style={{ padding: '16px' }}>Cost Price ({currency})</th>
+                <th style={{ padding: '16px' }}>Retail Price ({currency})</th>
+                <th style={{ padding: '16px' }}>Stock Qty</th>
+                <th style={{ padding: '16px' }}>Reorder Level</th>
                 <th style={{ padding: '16px' }}>Expiry Date</th>
                 <th style={{ padding: '16px', textAlign: 'left' }}>Actions</th>
               </tr>
@@ -941,7 +950,7 @@ export const Inventory: React.FC = () => {
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     No products found matching filters.
                   </td>
                 </tr>
@@ -961,8 +970,10 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td style={{ padding: '16px' }}>{prod.category_name || 'Unassigned'}</td>
                       <td style={{ padding: '16px' }}>
-                        <div>Retail: {formatCurrency(prod.unit_price)}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Cost: {formatCurrency(prod.cost_price)}</div>
+                        {formatCurrency(prod.cost_price)}
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        {formatCurrency(prod.unit_price)}
                       </td>
                       <td style={{ padding: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -975,7 +986,9 @@ export const Inventory: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Reorder Min: {prod.reorder_threshold}</div>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        {prod.reorder_threshold} units
                       </td>
                       <td style={{ padding: '16px' }}>
                         {prod.expiry_date ? (
@@ -1159,8 +1172,10 @@ export const Inventory: React.FC = () => {
                           <th style={{ padding: '8px 12px' }}>SKU</th>
                           <th style={{ padding: '8px 12px' }}>Name</th>
                           <th style={{ padding: '8px 12px' }}>Category</th>
-                          <th style={{ padding: '8px 12px' }}>Prices ({currency})</th>
-                          <th style={{ padding: '8px 12px' }}>Stock</th>
+                          <th style={{ padding: '8px 12px' }}>Cost Price ({currency})</th>
+                          <th style={{ padding: '8px 12px' }}>Retail Price ({currency})</th>
+                          <th style={{ padding: '8px 12px' }}>Stock Qty</th>
+                          <th style={{ padding: '8px 12px' }}>Reorder Level</th>
                           <th style={{ padding: '8px 12px' }}>Status</th>
                         </tr>
                       </thead>
@@ -1172,10 +1187,13 @@ export const Inventory: React.FC = () => {
                             <td style={{ padding: '8px 12px' }}>{r.data.name || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                             <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.data.category || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                             <td style={{ padding: '8px 12px' }}>
-                              Cost: {isNaN(r.data.cost_price) ? '-' : formatCurrency(r.data.cost_price)}<br />
-                              Retail: {isNaN(r.data.unit_price) ? '-' : formatCurrency(r.data.unit_price)}
+                              {isNaN(r.data.cost_price) ? '-' : formatCurrency(r.data.cost_price)}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {isNaN(r.data.unit_price) ? '-' : formatCurrency(r.data.unit_price)}
                             </td>
                             <td style={{ padding: '8px 12px' }}>{r.data.quantity_on_hand}</td>
+                            <td style={{ padding: '8px 12px' }}>{r.data.reorder_threshold}</td>
                             <td style={{ padding: '8px 12px' }}>
                               {r.isValid ? (
                                 <span style={{ color: 'var(--emerald-green)', fontWeight: 500 }}>Ready</span>
