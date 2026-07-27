@@ -955,7 +955,13 @@ export const Inventory: React.FC = () => {
               ) : (
                 filteredProducts.map(prod => {
                   const isLowStock = prod.quantity_on_hand <= prod.reorder_threshold;
-                  const isExpired = prod.expiry_date && new Date(prod.expiry_date) < new Date();
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const expDate = prod.expiry_date ? new Date(prod.expiry_date) : null;
+                  if (expDate) {
+                    expDate.setHours(0, 0, 0, 0);
+                  }
+                  const isExpired = expDate ? expDate < today : false;
                   return (
                     <tr key={prod.id} className="table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '16px' }}>
@@ -986,7 +992,7 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td style={{ padding: '16px' }}>
                         {prod.expiry_date ? (
-                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)', fontWeight: isExpired ? 600 : 'normal' }}>
+                          <div style={{ color: isExpired ? '#ff4d4d' : 'var(--text-primary)', fontWeight: isExpired ? 600 : 'normal' }}>
                             {new Date(prod.expiry_date).toLocaleDateString()}
                           </div>
                         ) : (
