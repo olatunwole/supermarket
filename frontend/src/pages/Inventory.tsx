@@ -937,13 +937,13 @@ export const Inventory: React.FC = () => {
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
                 <th style={{ padding: '16px' }}>Product Details</th>
-                <th style={{ padding: '16px' }}>SKU & Barcode</th>
+                <th style={{ padding: '16px' }}>SKU</th>
+                <th style={{ padding: '16px' }}>Barcode</th>
                 <th style={{ padding: '16px' }}>Category</th>
                 <th style={{ padding: '16px' }}>Cost Price ({currency})</th>
                 <th style={{ padding: '16px' }}>Retail Price ({currency})</th>
                 <th style={{ padding: '16px' }}>Stock Qty</th>
                 <th style={{ padding: '16px' }}>Reorder Level</th>
-                <th style={{ padding: '16px' }}>Expiry Date</th>
                 <th style={{ padding: '16px', textAlign: 'left' }}>Actions</th>
               </tr>
             </thead>
@@ -959,15 +959,28 @@ export const Inventory: React.FC = () => {
                   const isLowStock = prod.quantity_on_hand <= prod.reorder_threshold;
                   const isExpired = prod.expiry_date && new Date(prod.expiry_date) < new Date();
                   return (
-                    <tr key={prod.id} className="table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <tr 
+                      key={prod.id} 
+                      className="table-row" 
+                      style={{ 
+                        borderBottom: '1px solid rgba(255,255,255,0.04)',
+                        color: isExpired ? 'var(--error-rose)' : 'inherit',
+                        background: isExpired ? 'rgba(244, 63, 94, 0.04)' : 'transparent'
+                      }}
+                    >
                       <td style={{ padding: '16px' }}>
                         <div style={{ fontWeight: 600 }}>{prod.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: #{prod.id}</div>
+                        <div style={{ fontSize: '0.75rem', color: isExpired ? 'var(--error-rose)' : 'var(--text-muted)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span>ID: #{prod.id}</span>
+                          {prod.expiry_date && (
+                            <span style={{ fontWeight: isExpired ? 600 : 'normal' }}>
+                              | Exp: {new Date(prod.expiry_date).toLocaleDateString()} {isExpired && '(EXPIRED)'}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td style={{ padding: '16px' }}>
-                        <div>{prod.sku}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>UPC: {prod.barcode || 'N/A'}</div>
-                      </td>
+                      <td style={{ padding: '16px' }}>{prod.sku}</td>
+                      <td style={{ padding: '16px' }}>{prod.barcode || <span style={{ color: 'var(--text-muted)' }}>N/A</span>}</td>
                       <td style={{ padding: '16px' }}>{prod.category_name || 'Unassigned'}</td>
                       <td style={{ padding: '16px' }}>
                         {formatCurrency(prod.cost_price)}
@@ -989,16 +1002,6 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td style={{ padding: '16px' }}>
                         {prod.reorder_threshold} units
-                      </td>
-                      <td style={{ padding: '16px' }}>
-                        {prod.expiry_date ? (
-                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)' }}>
-                            {new Date(prod.expiry_date).toLocaleDateString()}
-                            {isExpired && <span style={{ fontSize: '0.7rem', marginLeft: '6px', fontWeight: 600 }}>(EXPIRED)</span>}
-                          </div>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>None</span>
-                        )}
                       </td>
                       <td style={{ padding: '16px', textAlign: 'left' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
