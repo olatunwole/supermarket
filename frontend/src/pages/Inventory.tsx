@@ -937,20 +937,18 @@ export const Inventory: React.FC = () => {
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
                 <th style={{ padding: '16px' }}>Product Details</th>
-                <th style={{ padding: '16px' }}>SKU</th>
-                <th style={{ padding: '16px' }}>Barcode</th>
+                <th style={{ padding: '16px' }}>SKU & Barcode</th>
                 <th style={{ padding: '16px' }}>Category</th>
-                <th style={{ padding: '16px' }}>Cost Price ({currency})</th>
-                <th style={{ padding: '16px' }}>Retail Price ({currency})</th>
-                <th style={{ padding: '16px' }}>Stock Qty</th>
-                <th style={{ padding: '16px' }}>Reorder Level</th>
+                <th style={{ padding: '16px' }}>Pricing</th>
+                <th style={{ padding: '16px' }}>Inventory Level</th>
+                <th style={{ padding: '16px' }}>Expiry Date</th>
                 <th style={{ padding: '16px', textAlign: 'left' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     No products found matching filters.
                   </td>
                 </tr>
@@ -959,34 +957,19 @@ export const Inventory: React.FC = () => {
                   const isLowStock = prod.quantity_on_hand <= prod.reorder_threshold;
                   const isExpired = prod.expiry_date && new Date(prod.expiry_date) < new Date();
                   return (
-                    <tr 
-                      key={prod.id} 
-                      className="table-row" 
-                      style={{ 
-                        borderBottom: '1px solid rgba(255,255,255,0.04)',
-                        color: isExpired ? 'var(--error-rose)' : 'inherit',
-                        background: isExpired ? 'rgba(244, 63, 94, 0.04)' : 'transparent'
-                      }}
-                    >
+                    <tr key={prod.id} className="table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '16px' }}>
                         <div style={{ fontWeight: 600 }}>{prod.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: isExpired ? 'var(--error-rose)' : 'var(--text-muted)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span>ID: #{prod.id}</span>
-                          {prod.expiry_date && (
-                            <span style={{ fontWeight: isExpired ? 600 : 'normal' }}>
-                              | Exp: {new Date(prod.expiry_date).toLocaleDateString()} {isExpired && '(EXPIRED)'}
-                            </span>
-                          )}
-                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: #{prod.id}</div>
                       </td>
-                      <td style={{ padding: '16px' }}>{prod.sku}</td>
-                      <td style={{ padding: '16px' }}>{prod.barcode || <span style={{ color: 'var(--text-muted)' }}>N/A</span>}</td>
+                      <td style={{ padding: '16px' }}>
+                        <div>{prod.sku}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>UPC: {prod.barcode || 'N/A'}</div>
+                      </td>
                       <td style={{ padding: '16px' }}>{prod.category_name || 'Unassigned'}</td>
                       <td style={{ padding: '16px' }}>
-                        {formatCurrency(prod.cost_price)}
-                      </td>
-                      <td style={{ padding: '16px' }}>
-                        {formatCurrency(prod.unit_price)}
+                        <div>Retail: {formatCurrency(prod.unit_price)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Cost: {formatCurrency(prod.cost_price)}</div>
                       </td>
                       <td style={{ padding: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -999,9 +982,17 @@ export const Inventory: React.FC = () => {
                             </span>
                           )}
                         </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Reorder Min: {prod.reorder_threshold}</div>
                       </td>
                       <td style={{ padding: '16px' }}>
-                        {prod.reorder_threshold} units
+                        {prod.expiry_date ? (
+                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)' }}>
+                            {new Date(prod.expiry_date).toLocaleDateString()}
+                            {isExpired && <span style={{ fontSize: '0.7rem', marginLeft: '6px', fontWeight: 600 }}>(EXPIRED)</span>}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>None</span>
+                        )}
                       </td>
                       <td style={{ padding: '16px', textAlign: 'left' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
@@ -1175,10 +1166,8 @@ export const Inventory: React.FC = () => {
                           <th style={{ padding: '8px 12px' }}>SKU</th>
                           <th style={{ padding: '8px 12px' }}>Name</th>
                           <th style={{ padding: '8px 12px' }}>Category</th>
-                          <th style={{ padding: '8px 12px' }}>Cost Price ({currency})</th>
-                          <th style={{ padding: '8px 12px' }}>Retail Price ({currency})</th>
-                          <th style={{ padding: '8px 12px' }}>Stock Qty</th>
-                          <th style={{ padding: '8px 12px' }}>Reorder Level</th>
+                          <th style={{ padding: '8px 12px' }}>Prices ({currency})</th>
+                          <th style={{ padding: '8px 12px' }}>Stock</th>
                           <th style={{ padding: '8px 12px' }}>Status</th>
                         </tr>
                       </thead>
@@ -1190,13 +1179,10 @@ export const Inventory: React.FC = () => {
                             <td style={{ padding: '8px 12px' }}>{r.data.name || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                             <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.data.category || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                             <td style={{ padding: '8px 12px' }}>
-                              {isNaN(r.data.cost_price) ? '-' : formatCurrency(r.data.cost_price)}
-                            </td>
-                            <td style={{ padding: '8px 12px' }}>
-                              {isNaN(r.data.unit_price) ? '-' : formatCurrency(r.data.unit_price)}
+                              Cost: {isNaN(r.data.cost_price) ? '-' : formatCurrency(r.data.cost_price)}<br />
+                              Retail: {isNaN(r.data.unit_price) ? '-' : formatCurrency(r.data.unit_price)}
                             </td>
                             <td style={{ padding: '8px 12px' }}>{r.data.quantity_on_hand}</td>
-                            <td style={{ padding: '8px 12px' }}>{r.data.reorder_threshold}</td>
                             <td style={{ padding: '8px 12px' }}>
                               {r.isValid ? (
                                 <span style={{ color: 'var(--emerald-green)', fontWeight: 500 }}>Ready</span>
