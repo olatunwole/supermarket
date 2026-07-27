@@ -444,8 +444,8 @@ export const Inventory: React.FC = () => {
         const idxSupplier = findHeaderIdx(['supplier', 'vendor']);
         const idxExpiry = findHeaderIdx(['expiry date', 'expiry', 'expire', 'exp']);
 
-        if (idxName === -1 || idxUnitPrice === -1 || idxCostPrice === -1 || idxReorder === -1) {
-          showNotification('Required columns missing. Template must contain Product Name, Cost Price, Retail Price, and Reorder Level.', 'error');
+        if (idxName === -1 || idxUnitPrice === -1 || idxCostPrice === -1) {
+          showNotification('Required columns missing. Template must contain Product Name, Cost Price, and Retail Price.', 'error');
           return;
         }
 
@@ -491,7 +491,7 @@ export const Inventory: React.FC = () => {
           if (!name) errors.push('Product Name is required');
           if (isNaN(unitPriceVal) || unitPriceVal < 0) errors.push('Retail Price must be a valid positive number');
           if (isNaN(costPriceVal) || costPriceVal < 0) errors.push('Cost Price must be a valid positive number');
-          if (row[idxReorder] == null || String(row[idxReorder]).trim() === '' || isNaN(reorderVal) || reorderVal < 0) {
+          if (idxReorder !== -1 && (row[idxReorder] == null || String(row[idxReorder]).trim() === '' || isNaN(reorderVal) || reorderVal < 0)) {
             errors.push('Reorder Level is required and must be a valid non-negative number');
           }
 
