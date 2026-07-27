@@ -256,8 +256,8 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
           categoryId,
           unit_price,
           cost_price,
-          quantity_on_hand || 0,
-          reorder_threshold || 10,
+          quantity_on_hand == null ? 0 : quantity_on_hand,
+          reorder_threshold == null ? 10 : reorder_threshold,
           supplierId,
           expiry_date || null
         ]
