@@ -986,7 +986,7 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td style={{ padding: '16px' }}>
                         {prod.expiry_date ? (
-                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)' }}>
+                          <div style={{ color: isExpired ? 'var(--error-rose)' : 'var(--text-primary)', fontWeight: isExpired ? 600 : 'normal' }}>
                             {new Date(prod.expiry_date).toLocaleDateString()}
                           </div>
                         ) : (
