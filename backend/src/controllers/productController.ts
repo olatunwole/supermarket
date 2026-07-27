@@ -52,8 +52,8 @@ export const getProductByBarcode = async (req: AuthRequest, res: Response): Prom
 
 export const createProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   const { name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date } = req.body;
-  if (!name || unit_price == null || cost_price == null || reorder_threshold == null) {
-    res.status(400).json({ error: 'name, unit_price, cost_price and reorder_threshold are required' }); return;
+  if (!name || unit_price == null || cost_price == null || reorder_threshold == null || !expiry_date) {
+    res.status(400).json({ error: 'name, unit_price, cost_price, reorder_threshold and expiry_date are required' }); return;
   }
   try {
     let finalBarcode = barcode ? String(barcode).trim() : '';
@@ -200,8 +200,8 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
       // Record the SKU to prevent any duplicates in this batch
       generatedSkus.add(finalSku);
 
-      if (!name || !finalSku || unit_price == null || cost_price == null || reorder_threshold == null) {
-        throw new Error(`Product ${name || 'unknown'} is missing required fields (name, unit_price, cost_price, reorder_threshold)`);
+      if (!name || !finalSku || unit_price == null || cost_price == null || reorder_threshold == null || !expiry_date) {
+        throw new Error(`Product ${name || 'unknown'} is missing required fields (name, unit_price, cost_price, reorder_threshold, expiry_date)`);
       }
 
       // Resolve category

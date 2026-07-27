@@ -258,8 +258,8 @@ export const Inventory: React.FC = () => {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.unit_price || !formData.cost_price || formData.reorder_threshold === '') {
-      showNotification('Please fill in Name, Cost Price, Retail Price, and Reorder Level', 'warning');
+    if (!formData.name || !formData.unit_price || !formData.cost_price || formData.reorder_threshold === '' || !formData.expiry_date) {
+      showNotification('Please fill in Name, Cost Price, Retail Price, Reorder Level, and Expiry Date', 'warning');
       return;
     }
 
@@ -444,8 +444,8 @@ export const Inventory: React.FC = () => {
         const idxSupplier = findHeaderIdx(['supplier', 'vendor']);
         const idxExpiry = findHeaderIdx(['expiry date', 'expiry', 'expire', 'exp']);
 
-        if (idxName === -1 || idxUnitPrice === -1 || idxCostPrice === -1) {
-          showNotification('Required columns missing. Template must contain Product Name, Cost Price, and Retail Price.', 'error');
+        if (idxName === -1 || idxUnitPrice === -1 || idxCostPrice === -1 || idxReorder === -1 || idxExpiry === -1) {
+          showNotification('Required columns missing. Template must contain Product Name, Cost Price, Retail Price, Reorder Level, and Expiry Date.', 'error');
           return;
         }
 
@@ -491,8 +491,11 @@ export const Inventory: React.FC = () => {
           if (!name) errors.push('Product Name is required');
           if (isNaN(unitPriceVal) || unitPriceVal < 0) errors.push('Retail Price must be a valid positive number');
           if (isNaN(costPriceVal) || costPriceVal < 0) errors.push('Cost Price must be a valid positive number');
-          if (idxReorder !== -1 && (row[idxReorder] == null || String(row[idxReorder]).trim() === '' || isNaN(reorderVal) || reorderVal < 0)) {
+          if (row[idxReorder] == null || String(row[idxReorder]).trim() === '' || isNaN(reorderVal) || reorderVal < 0) {
             errors.push('Reorder Level is required and must be a valid non-negative number');
+          }
+          if (!expiryDate) {
+            errors.push('Expiry Date is required and must be a valid YYYY-MM-DD date');
           }
 
           return {
@@ -844,12 +847,13 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group span-cols" style={{ marginBottom: 0 }}>
-                <label className="form-label">Batch Expiry Date</label>
+                <label className="form-label">Batch Expiry Date *</label>
                 <input 
                   type="date" 
                   className="form-input" 
                   value={formData.expiry_date} 
                   onChange={e => setFormData({ ...formData, expiry_date: e.target.value })} 
+                  required
                 />
               </div>
             </div>
