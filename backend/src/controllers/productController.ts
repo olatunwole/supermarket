@@ -148,6 +148,8 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
     );
 
     const results: any[] = [];
+    const generatedBarcodes = new Set<string>();
+    const generatedSkus = new Set<string>();
 
     for (const item of productsList) {
       const {
@@ -174,9 +176,11 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
         while (!isUnique && attempts < 100) {
           const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
           const tempBarcode = prefix + randomPart;
-          const checkResult = await client.query('SELECT id FROM products WHERE barcode = $1', [tempBarcode]);
-          if (checkResult.rows.length === 0) {
+          
+          const checkResult = await client.query('SELECT id FROM products WHERE barcode = $1 OR sku = $1', [tempBarcode]);
+          if (checkResult.rows.length === 0 && !generatedBarcodes.has(tempBarcode) && !generatedSkus.has(tempBarcode)) {
             finalBarcode = tempBarcode;
+            generatedBarcodes.add(tempBarcode);
             isUnique = true;
           }
           attempts++;
@@ -187,6 +191,9 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
       if (!finalSku) {
         finalSku = finalBarcode;
       }
+
+      // Record the SKU to prevent any duplicates in this batch
+      generatedSkus.add(finalSku);
 
       if (!name || !finalSku || unit_price == null || cost_price == null) {
         throw new Error(`Product ${name || 'unknown'} is missing required fields (name, unit_price, cost_price)`);
