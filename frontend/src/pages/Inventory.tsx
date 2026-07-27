@@ -545,10 +545,13 @@ export const Inventory: React.FC = () => {
         setImportRows([]);
         setUploadedFileName('');
         if (fileInputRef.current) fileInputRef.current.value = '';
-        setLoading(true);
-        const updated = await apiFetch<Product[]>('/api/products');
-        setProducts(updated);
-        setLoading(false);
+        
+        // Clear active filters so new products are visible immediately
+        setSearch('');
+        setSelectedCategory('');
+        setSelectedSupplier('');
+        
+        await fetchInitialData();
       }
     } catch (err: any) {
       showNotification(err.message || 'Import failed', 'error');
