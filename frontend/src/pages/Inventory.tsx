@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   Layers,
   Upload,
+  Download,
   Barcode as BarcodeIcon
 } from 'lucide-react';
 import { Barcode } from '../components/Barcode';
@@ -56,6 +57,8 @@ export const Inventory: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importRows, setImportRows] = useState<any[]>([]);
   const [importProgress, setImportProgress] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Quick stock adjustment state
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
@@ -359,6 +362,7 @@ export const Inventory: React.FC = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadedFileName(file.name);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -465,6 +469,8 @@ export const Inventory: React.FC = () => {
         }).filter(r => r.data.name);
 
         setImportRows(parsedRows);
+        setIsImportModalOpen(true);
+        showNotification('Spreadsheet parsed successfully! Previewing rows.', 'success');
       } catch (err) {
         console.error(err);
         showNotification('Failed to read Excel file. Make sure it is in valid XLSX format.', 'error');
@@ -491,6 +497,8 @@ export const Inventory: React.FC = () => {
         showNotification(`Successfully imported/updated ${res.count} products!`, 'success');
         setIsImportModalOpen(false);
         setImportRows([]);
+        setUploadedFileName('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
         setLoading(true);
         const updated = await apiFetch<Product[]>('/api/products');
         setProducts(updated);
@@ -536,7 +544,14 @@ export const Inventory: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={() => setIsImportModalOpen(true)}>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            accept=".xlsx" 
+            style={{ display: 'none' }} 
+            onChange={handleFileUpload} 
+          />
+          <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={18} /> Bulk Import
           </button>
 
@@ -1021,30 +1036,37 @@ export const Inventory: React.FC = () => {
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Upload size={20} className="text-accent" /> Bulk Import Catalog
               </h3>
-              <button type="button" className="btn-close" onClick={() => { setIsImportModalOpen(false); setImportRows([]); }}>
+              <button type="button" className="btn-close" onClick={() => { setIsImportModalOpen(false); setImportRows([]); setUploadedFileName(''); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
                 <X size={20} />
               </button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px dashed var(--glass-border)', marginBottom: '16px', textAlign: 'center' }}>
-                <p style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>
-                  Download the Excel template to ensure your spreadsheet column headers match our import schema.
-                </p>
-                <button type="button" className="btn btn-secondary" onClick={handleDownloadTemplate} style={{ margin: '0 auto' }}>
-                  <FileSpreadsheet size={16} /> Download Template (.xlsx)
-                </button>
-              </div>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px dashed var(--glass-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', minWidth: '220px' }}>
+                  <p style={{ fontSize: '0.8rem', marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                    Selected File
+                  </p>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--accent-cyan)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileSpreadsheet size={16} />
+                    {uploadedFileName || 'No file selected'}
+                  </div>
+                  <button type="button" className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => fileInputRef.current?.click()}>
+                    Select Different File
+                  </button>
+                </div>
 
-              <div style={{ marginBottom: '20px' }}>
-                <label className="form-label">Upload Spreadsheet (XLSX)</label>
-                <input 
-                  type="file" 
-                  accept=".xlsx" 
-                  className="form-input" 
-                  onChange={handleFileUpload} 
-                  style={{ paddingTop: '8px' }} 
-                />
+                <div style={{ flex: 1, background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px dashed var(--glass-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', minWidth: '220px' }}>
+                  <p style={{ fontSize: '0.8rem', marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                    Excel Schema Template
+                  </p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    Columns match the inventory catalog export.
+                  </p>
+                  <button type="button" className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={handleDownloadTemplate}>
+                    <Download size={14} /> Download Template (.xlsx)
+                  </button>
+                </div>
               </div>
 
               {importRows.length > 0 && (
@@ -1103,7 +1125,7 @@ export const Inventory: React.FC = () => {
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                onClick={() => { setIsImportModalOpen(false); setImportRows([]); }}
+                onClick={() => { setIsImportModalOpen(false); setImportRows([]); setUploadedFileName(''); if (fileInputRef.current) fileInputRef.current.value = ''; }}
                 disabled={importProgress}
               >
                 Close
