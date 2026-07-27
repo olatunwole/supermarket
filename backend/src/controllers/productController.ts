@@ -163,8 +163,33 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
         expiry_date
       } = item;
 
-      if (!name || !sku || unit_price == null || cost_price == null) {
-        throw new Error(`Product ${sku || name || 'unknown'} is missing required fields (name, sku, unit_price, cost_price)`);
+      let finalSku = sku ? String(sku).trim() : '';
+      let finalBarcode = barcode ? String(barcode).trim() : '';
+
+      // 1. Resolve barcode (generate one if missing, just like single creation)
+      if (!finalBarcode) {
+        const prefix = '200';
+        let isUnique = false;
+        let attempts = 0;
+        while (!isUnique && attempts < 100) {
+          const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+          const tempBarcode = prefix + randomPart;
+          const checkResult = await client.query('SELECT id FROM products WHERE barcode = $1', [tempBarcode]);
+          if (checkResult.rows.length === 0) {
+            finalBarcode = tempBarcode;
+            isUnique = true;
+          }
+          attempts++;
+        }
+      }
+
+      // 2. If SKU is missing, link it to the barcode
+      if (!finalSku) {
+        finalSku = finalBarcode;
+      }
+
+      if (!name || !finalSku || unit_price == null || cost_price == null) {
+        throw new Error(`Product ${name || 'unknown'} is missing required fields (name, unit_price, cost_price)`);
       }
 
       // Resolve category
@@ -201,24 +226,6 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
         }
       }
 
-      // Resolve barcode (generate one if missing, just like single creation)
-      let finalBarcode = barcode;
-      if (!finalBarcode) {
-        const prefix = '200';
-        let isUnique = false;
-        let attempts = 0;
-        while (!isUnique && attempts < 100) {
-          const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
-          const tempBarcode = prefix + randomPart;
-          const checkResult = await client.query('SELECT id FROM products WHERE barcode = $1', [tempBarcode]);
-          if (checkResult.rows.length === 0) {
-            finalBarcode = tempBarcode;
-            isUnique = true;
-          }
-          attempts++;
-        }
-      }
-
       // Upsert product
       const upsertRes = await client.query(
         `INSERT INTO products (name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
@@ -237,7 +244,7 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
          RETURNING *`,
         [
           name,
-          sku,
+          finalSku,
           finalBarcode || null,
           categoryId,
           unit_price,

@@ -311,28 +311,28 @@ export const Inventory: React.FC = () => {
 
   const handleDownloadTemplate = () => {
     const headers = [
-      'Name',
+      'Product Name',
       'SKU',
       'Barcode',
       'Category',
-      'Unit Price',
-      'Cost Price',
-      'Quantity On Hand',
-      'Reorder Threshold',
       'Supplier',
-      'Expiry Date (YYYY-MM-DD)'
+      'Cost Price (£)',
+      'Retail Price (£)',
+      'Stock Qty',
+      'Reorder Level',
+      'Expiry Date'
     ];
     const sampleData = [
       [
         'Fresh Organic Strawberries 400g',
-        'PRD-STW',
+        '', // SKU left blank so they can test auto-generation!
         '5000112637990',
         'Fruits & Vegetables',
-        '2.99',
+        'Fresh Farms Ltd',
         '1.50',
+        '2.99',
         '40',
         '10',
-        'Fresh Farms Ltd',
         '2026-08-10'
       ],
       [
@@ -340,11 +340,11 @@ export const Inventory: React.FC = () => {
         'PRD-002',
         '5000112637923',
         'Dairy & Eggs',
-        '1.55',
+        'Metro Wholesale',
         '0.85',
+        '1.55',
         '100',
         '20',
-        'Metro Wholesale',
         '2026-08-15'
       ]
     ];
@@ -386,19 +386,19 @@ export const Inventory: React.FC = () => {
           });
         };
 
-        const idxName = findHeaderIdx(['name']);
+        const idxName = findHeaderIdx(['product name', 'name']);
         const idxSku = findHeaderIdx(['sku']);
         const idxBarcode = findHeaderIdx(['barcode', 'upc', 'ean']);
         const idxCategory = findHeaderIdx(['category', 'cat']);
-        const idxUnitPrice = findHeaderIdx(['unit price', 'unitprice', 'price', 'retail'], ['cost price', 'costprice']);
+        const idxUnitPrice = findHeaderIdx(['retail price', 'retail', 'unit price', 'unitprice', 'price'], ['cost price', 'costprice']);
         const idxCostPrice = findHeaderIdx(['cost price', 'costprice', 'cost']);
-        const idxQty = findHeaderIdx(['quantity', 'qty', 'stock']);
-        const idxReorder = findHeaderIdx(['reorder', 'threshold', 'limit']);
+        const idxQty = findHeaderIdx(['stock qty', 'stock', 'quantity', 'qty']);
+        const idxReorder = findHeaderIdx(['reorder level', 'reorder', 'threshold', 'limit']);
         const idxSupplier = findHeaderIdx(['supplier', 'vendor']);
-        const idxExpiry = findHeaderIdx(['expiry', 'expire', 'exp']);
+        const idxExpiry = findHeaderIdx(['expiry date', 'expiry', 'expire', 'exp']);
 
-        if (idxName === -1 || idxSku === -1 || idxUnitPrice === -1 || idxCostPrice === -1) {
-          showNotification('Required columns missing. Template must contain Name, SKU, Unit Price, and Cost Price.', 'error');
+        if (idxName === -1 || idxUnitPrice === -1 || idxCostPrice === -1) {
+          showNotification('Required columns missing. Template must contain Product Name, Cost Price, and Retail Price.', 'error');
           return;
         }
 
@@ -430,7 +430,7 @@ export const Inventory: React.FC = () => {
 
         const parsedRows = dataRows.map((row, index) => {
           const name = row[idxName] ? String(row[idxName]).trim() : '';
-          const sku = row[idxSku] ? String(row[idxSku]).trim() : '';
+          const sku = idxSku !== -1 && row[idxSku] ? String(row[idxSku]).trim() : '';
           const barcode = idxBarcode !== -1 && row[idxBarcode] ? String(row[idxBarcode]).trim() : '';
           const category = idxCategory !== -1 && row[idxCategory] ? String(row[idxCategory]).trim() : '';
           const unitPriceVal = idxUnitPrice !== -1 ? parseNumeric(row[idxUnitPrice]) : NaN;
@@ -441,16 +441,15 @@ export const Inventory: React.FC = () => {
           const expiryDate = idxExpiry !== -1 && row[idxExpiry] ? parseDateString(row[idxExpiry]) : null;
 
           const errors: string[] = [];
-          if (!name) errors.push('Name is required');
-          if (!sku) errors.push('SKU is required');
-          if (isNaN(unitPriceVal) || unitPriceVal < 0) errors.push('Unit Price must be a valid positive number');
+          if (!name) errors.push('Product Name is required');
+          if (isNaN(unitPriceVal) || unitPriceVal < 0) errors.push('Retail Price must be a valid positive number');
           if (isNaN(costPriceVal) || costPriceVal < 0) errors.push('Cost Price must be a valid positive number');
 
           return {
             rowNum: index + 2,
             data: {
               name,
-              sku,
+              sku: sku || null,
               barcode: barcode || null,
               category: category || null,
               unit_price: unitPriceVal,
@@ -463,7 +462,7 @@ export const Inventory: React.FC = () => {
             isValid: errors.length === 0,
             errors
           };
-        }).filter(r => r.data.name || r.data.sku);
+        }).filter(r => r.data.name);
 
         setImportRows(parsedRows);
       } catch (err) {
