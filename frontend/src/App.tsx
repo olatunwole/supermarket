@@ -13,6 +13,7 @@ import { Users } from './pages/Users';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Financials } from './pages/Financials';
+import { ScanCompanion } from './pages/ScanCompanion';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/scan-companion" element={<ScanCompanion />} />
 
           {/* Protected Layout Routes */}
           <Route element={<ProtectedRoute />}>

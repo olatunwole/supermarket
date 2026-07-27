@@ -56,10 +56,27 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
     res.status(400).json({ error: 'name, sku, unit_price and cost_price are required' }); return;
   }
   try {
+    let finalBarcode = barcode;
+    if (!finalBarcode) {
+      const prefix = '200';
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 100) {
+        const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+        const tempBarcode = prefix + randomPart;
+        const checkResult = await query('SELECT id FROM products WHERE barcode = $1', [tempBarcode]);
+        if (checkResult.rows.length === 0) {
+          finalBarcode = tempBarcode;
+          isUnique = true;
+        }
+        attempts++;
+      }
+    }
+
     const result = await query(
       `INSERT INTO products (name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [name, sku, barcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
+      [name, sku, finalBarcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
     );
     await logAudit(req, 'CREATE_PRODUCT', `Created product ${name} (${sku})`);
     res.status(201).json(result.rows[0]);

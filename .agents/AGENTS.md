@@ -26,3 +26,9 @@ All changes, extensions, or refactoring on this codebase must adhere strictly to
 ## 5. Security & Modular Staff Management
 - **Self-Service Passwords**: General users are allowed to change their passwords via `/api/auth/change-password` routes. The username is audit-locked and cannot be modified.
 - **Modular Pages**: Keep "Staff Users" registry accounts management on its own administrative page `/users` and separate from "Settings" which is for system configuration.
+
+## 6. Local Git & Environment Constraints
+- **Root Gitignore Protection**: Always maintain a `.gitignore` at the root directory level. Never track local database directories (`pg-data/`), portable database binaries (`pg-env/`), or node environments (`node-env/`, `node_modules/`).
+- **Non-Admin Git Installer**: If Git is missing on Windows, use `winget install --id Git.MinGit -e` to download the portable/zip-based version. Avoid standard installers to bypass UAC administrator privilege prompts.
+- **Terminal PATH Refresh**: When executing commands immediately after package installations, prefix shell commands with `$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")` to ensure recently added binary directories are registered in the current terminal instance.
+

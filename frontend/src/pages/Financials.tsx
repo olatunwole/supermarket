@@ -114,7 +114,7 @@ interface CashflowResponse {
 
 export const Financials: React.FC = () => {
   const { apiFetch, showNotification, formatCurrency } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'staging' | 'post-other' | 'accounts' | 'trial' | 'operations' | 'position' | 'cashflow' | 'journal'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'staging' | 'post-other' | 'accounts' | 'trial' | 'operations' | 'position' | 'cashflow' | 'journal' | 'closings'>('overview');
   const [loading, setLoading] = useState<boolean>(true);
 
   // Filters
@@ -134,6 +134,11 @@ export const Financials: React.FC = () => {
   const [positionData, setPositionData] = useState<PositionResponse | null>(null);
   const [cashflowData, setCashflowData] = useState<CashflowResponse | null>(null);
   const [stagingTransactions, setStagingTransactions] = useState<StagedTransaction[]>([]);
+  const [closedPeriods, setClosedPeriods] = useState<any[]>([]);
+  const [closePeriodType, setClosePeriodType] = useState<'month' | 'year'>('month');
+  const [closePeriodName, setClosePeriodName] = useState<string>('');
+  const [closingPreview, setClosingPreview] = useState<{ revenues: any[]; expenses: any[]; totalRevenue: number; totalExpense: number; netProfit: number } | null>(null);
+  const [closingPreviewLoading, setClosingPreviewLoading] = useState<boolean>(false);
 
   // Modals state
   const [showAddAccountModal, setShowAddAccountModal] = useState<boolean>(false);
@@ -543,6 +548,16 @@ export const Financials: React.FC = () => {
     }
   };
 
+  // Fetch Closed Periods
+  const fetchClosedPeriods = async () => {
+    try {
+      const data = await apiFetch<any[]>('/api/financials/closed-periods');
+      setClosedPeriods(data);
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to fetch closed periods', 'error');
+    }
+  };
+
   // Fetch single Account Ledger
   const fetchAccountLedger = async (account: Account) => {
     setSelectedLedgerAccount(account);
@@ -569,7 +584,8 @@ export const Financials: React.FC = () => {
       fetchOperationsStatement(),
       fetchBalanceSheet(),
       fetchCashFlow(),
-      fetchStagingTransactions()
+      fetchStagingTransactions(),
+      fetchClosedPeriods()
     ]);
     setLoading(false);
   };
@@ -618,6 +634,108 @@ export const Financials: React.FC = () => {
       await loadData();
     } catch (err: any) {
       showNotification(err.message || 'Failed to post transaction(s)', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectStagedTransactions = async (txList: { reference: string }[]) => {
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message: string }>('/api/financials/reject-transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactions: txList })
+      });
+      showNotification(res.message || 'Rejected staged transactions successfully', 'success');
+      await loadData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to reject transaction(s)', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getPeriodDates = (type: 'month' | 'year', name: string) => {
+    if (type === 'month') {
+      const match = name.match(/^(\d{4})-(\d{2})$/);
+      if (!match) return null;
+      const year = parseInt(match[1]);
+      const month = parseInt(match[2]);
+      const lastDay = new Date(year, month, 0).getDate();
+      return {
+        from: `${name}-01`,
+        to: `${name}-${lastDay}`
+      };
+    } else {
+      const match = name.match(/^(\d{4})$/);
+      if (!match) return null;
+      return {
+        from: `${name}-01-01`,
+        to: `${name}-12-31`
+      };
+    }
+  };
+
+  const handleCalculatePreview = async () => {
+    if (!closePeriodName) {
+      showNotification('Please select a period to calculate', 'warning');
+      return;
+    }
+    const dates = getPeriodDates(closePeriodType, closePeriodName);
+    if (!dates) {
+      showNotification('Invalid period format. Use YYYY-MM for month or YYYY for year.', 'warning');
+      return;
+    }
+    setClosingPreviewLoading(true);
+    try {
+      const data = await apiFetch<OperationsResponse>(`/api/financials/statement-of-operations?from=${dates.from}&to=${dates.to}`);
+      
+      const revenues = data.revenues.map(r => ({ ...r, balance: Number(r.balance) }));
+      const expenses = [
+        { code: '5010', name: 'Cost of Goods Sold (COGS)', balance: Number(data.cogs) },
+        ...data.operatingExpenses.map(e => ({ ...e, balance: Number(e.balance) }))
+      ].filter(e => e.balance > 0);
+
+      const totalRevenue = Number(data.totalRevenue);
+      const totalExpense = Number(data.cogs) + Number(data.totalOperatingExpenses);
+      const netProfit = Number(data.netIncome);
+
+      setClosingPreview({
+        revenues,
+        expenses,
+        totalRevenue,
+        totalExpense,
+        netProfit
+      });
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to calculate closing preview', 'error');
+    } finally {
+      setClosingPreviewLoading(false);
+    }
+  };
+
+  const handleClosePeriod = async () => {
+    if (!closePeriodName) return;
+    if (!window.confirm(`Are you sure you want to close the period ${closePeriodName}? This will post a closing journal entry and lock the period against future entries.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiFetch<any>('/api/financials/close-period', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_type: closePeriodType,
+          period_name: closePeriodName
+        })
+      });
+      showNotification(res.message || 'Period closed successfully!', 'success');
+      setClosingPreview(null);
+      setClosePeriodName('');
+      await loadData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to close period', 'error');
     } finally {
       setLoading(false);
     }
@@ -841,6 +959,9 @@ export const Financials: React.FC = () => {
         <button className={`tab-btn ${activeTab === 'journal' ? 'active' : ''}`} onClick={() => setActiveTab('journal')}>
           Journal Log
         </button>
+        <button className={`tab-btn ${activeTab === 'closings' ? 'active' : ''}`} onClick={() => setActiveTab('closings')}>
+          Period Closings
+        </button>
       </div>
 
       {/* Loading Bar Overlay */}
@@ -993,16 +1114,30 @@ export const Financials: React.FC = () => {
                 <FileText size={14} /> Download PDF
               </button>
               {stagingTransactions.length > 0 && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => {
-                    const items = stagingTransactions.map(tx => ({ type: tx.type, id: tx.id }));
-                    handlePostStagedTransactions(items);
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <CheckCircle2 size={16} /> Post All Staged ({stagingTransactions.length})
-                </button>
+                <>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => {
+                      const items = stagingTransactions.map(tx => ({ type: tx.type, id: tx.id }));
+                      handlePostStagedTransactions(items);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--success-emerald)', borderColor: 'var(--success-emerald)' }}
+                  >
+                    <CheckCircle2 size={16} /> Post All Staged ({stagingTransactions.length})
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm text-danger"
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to reject all ${stagingTransactions.length} pending transactions?`)) {
+                        const items = stagingTransactions.map(tx => ({ reference: tx.reference }));
+                        handleRejectStagedTransactions(items);
+                      }
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: 'var(--error-rose)' }}
+                  >
+                    <X size={16} /> Reject All Staged ({stagingTransactions.length})
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1044,13 +1179,20 @@ export const Financials: React.FC = () => {
                       <td style={{ padding: '16px', textAlign: 'right', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                         {formatCurrency(tx.amount)}
                       </td>
-                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                      <td style={{ padding: '16px', textAlign: 'right', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                         <button
                           className="btn btn-primary btn-sm"
-                          style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', backgroundColor: 'var(--success-emerald)', borderColor: 'var(--success-emerald)' }}
                           onClick={() => handlePostStagedTransactions([{ type: tx.type, id: tx.id }])}
                         >
                           Post
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm text-danger"
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', borderColor: 'var(--error-rose)' }}
+                          onClick={() => handleRejectStagedTransactions([{ reference: tx.reference }])}
+                        >
+                          Reject
                         </button>
                       </td>
                     </tr>
@@ -1773,6 +1915,184 @@ export const Financials: React.FC = () => {
                 );
               })
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Period Closings */}
+      {activeTab === 'closings' && (
+        <div className="tab-pane animation-fade">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', alignItems: 'start' }}>
+            
+            {/* Action Card: Close a Period */}
+            <div className="glass-card" style={{ padding: '28px' }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar className="text-accent" size={22} /> Close Financial Period
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+                Closing temporary accounts transfers their net balance (profit/loss) to Retained Earnings and locks the period.
+              </p>
+
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label className="form-label">Period Type</label>
+                <select
+                  className="form-select"
+                  value={closePeriodType}
+                  onChange={(e) => {
+                    setClosePeriodType(e.target.value as 'month' | 'year');
+                    setClosePeriodName('');
+                    setClosingPreview(null);
+                  }}
+                >
+                  <option value="month">Monthly Close</option>
+                  <option value="year">Yearly Close</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label className="form-label">
+                  {closePeriodType === 'month' ? 'Select Month (YYYY-MM)' : 'Select Year (YYYY)'}
+                </label>
+                {closePeriodType === 'month' ? (
+                  <input
+                    type="month"
+                    className="form-input"
+                    value={closePeriodName}
+                    onChange={(e) => {
+                      setClosePeriodName(e.target.value);
+                      setClosingPreview(null);
+                    }}
+                    required
+                  />
+                ) : (
+                  <select
+                    className="form-select"
+                    value={closePeriodName}
+                    onChange={(e) => {
+                      setClosePeriodName(e.target.value);
+                      setClosingPreview(null);
+                    }}
+                    required
+                  >
+                    <option value="">-- Select Year --</option>
+                    {(() => {
+                      const currentYear = new Date().getFullYear();
+                      const years = [];
+                      for (let y = currentYear - 5; y <= currentYear + 1; y++) {
+                        years.push(y);
+                      }
+                      return years.map(y => (
+                        <option key={y} value={String(y)}>{y}</option>
+                      ));
+                    })()}
+                  </select>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1, border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.03)' }}
+                  onClick={handleCalculatePreview}
+                  disabled={closingPreviewLoading || !closePeriodName}
+                >
+                  {closingPreviewLoading ? 'Calculating...' : 'Preview Closing Summary'}
+                </button>
+                {closingPreview && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ flex: 1, backgroundColor: 'var(--success-emerald)', borderColor: 'var(--success-emerald)' }}
+                    onClick={handleClosePeriod}
+                  >
+                    Close Period
+                  </button>
+                )}
+              </div>
+
+              {/* Preview Section */}
+              {closingPreview && (
+                <div style={{ marginTop: '24px', borderTop: '1px solid var(--glass-border)', paddingTop: '20px' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px', color: 'var(--text-primary)' }}>
+                    Closing Summary Preview
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                    <div className="flex-space">
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Total Projected Revenues:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--success-emerald)' }}>{formatCurrency(closingPreview.totalRevenue)}</span>
+                    </div>
+                    <div className="flex-space">
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Total Projected Expenses:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--error-rose)' }}>{formatCurrency(closingPreview.totalExpense)}</span>
+                    </div>
+                    <div className="flex-space" style={{ borderTop: '1px dashed var(--glass-border)', paddingTop: '8px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Projected Net Profit / (Loss):</span>
+                      <span style={{ fontWeight: 700, fontSize: '0.95rem', color: closingPreview.netProfit >= 0 ? 'var(--success-emerald)' : 'var(--error-rose)' }}>
+                        {formatCurrency(closingPreview.netProfit)}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div style={{ marginTop: '16px' }}>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      ⚠️ <strong>Warning:</strong> Closing this period will post a dynamic Journal Entry matching revenue & expense balances, bringing their respective ledger feeds to 0.00 and recording the net income to owner retained earnings.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* List Table Card: Closed Periods */}
+            <div className="glass-card" style={{ padding: '28px' }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '4px' }}>
+                Closed Periods History
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+                Historical closed accounting logs and locks.
+              </p>
+
+              <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                <table className="excel-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Type</th>
+                      <th>End Date (Closed)</th>
+                      <th>Closed By</th>
+                      <th style={{ textAlign: 'right' }}>Journal Ref</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closedPeriods.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          No closed periods on record.
+                        </td>
+                      </tr>
+                    ) : (
+                      closedPeriods.map(cp => (
+                        <tr key={cp.id} className="table-row">
+                          <td style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{cp.period_name}</td>
+                          <td style={{ textTransform: 'capitalize' }}>{cp.period_type}</td>
+                          <td>{new Date(cp.closed_at).toLocaleDateString()}</td>
+                          <td>{cp.closed_by_username || 'system'}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className="badge badge-info" style={{ cursor: 'pointer' }} onClick={() => {
+                              setActiveTab('journal');
+                              setNewJeRef(`close:${cp.period_type}:${cp.period_name}`);
+                            }}>
+                              {cp.journal_entry_id ? `#${cp.journal_entry_id}` : 'N/A'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
           </div>
         </div>
       )}

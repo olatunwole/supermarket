@@ -14,7 +14,10 @@ import {
   getAccountLedger,
   getStagingTransactions,
   postTransactions,
-  postOtherTransaction
+  postOtherTransaction,
+  rejectTransactions,
+  getClosedPeriods,
+  closePeriod
 } from '../controllers/financialsController';
 
 const router = Router();
@@ -44,5 +47,10 @@ router.get('/statement-of-cashflow', getStatementOfCashflow);
 router.get('/staging-transactions', getStagingTransactions);
 router.post('/post-transactions', postTransactions);
 router.post('/post-other', postOtherTransaction);
+router.post('/reject-transactions', rejectTransactions);
+
+// Closings and locking
+router.get('/closed-periods', getClosedPeriods);
+router.post('/close-period', closePeriod);
 
 export default router;

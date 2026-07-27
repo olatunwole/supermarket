@@ -211,6 +211,17 @@ export const createJournalEntry = async (req: AuthRequest, res: Response): Promi
     const entryDate = entry_date ? new Date(entry_date) : new Date();
     const ref = reference || 'manual';
 
+    // Validate date against closed periods
+    const closedCheck = await client.query(
+      `SELECT period_name FROM closed_periods 
+       WHERE $1 BETWEEN start_date AND end_date`,
+      [entryDate]
+    );
+    if (closedCheck.rows.length > 0) {
+      res.status(400).json({ error: `Cannot post journal entry: The transaction date falls within a closed financial period (${closedCheck.rows[0].period_name}).` });
+      return;
+    }
+
     const jeRes = await client.query(
       `INSERT INTO journal_entries (entry_date, description, reference, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
@@ -627,6 +638,8 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
       LEFT JOIN users u ON s.cashier_id = u.id
       WHERE NOT EXISTS (
         SELECT 1 FROM journal_entries je WHERE je.reference = 'sale:' || s.id
+      ) AND NOT EXISTS (
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'sale:' || s.id
       )
     `;
     const salesRes = await query(salesSql);
@@ -641,6 +654,8 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
       LEFT JOIN suppliers sup ON po.supplier_id = sup.id
       WHERE po.status = 'received' AND NOT EXISTS (
         SELECT 1 FROM journal_entries je WHERE je.reference = 'po:' || po.id
+      ) AND NOT EXISTS (
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'po:' || po.id
       )
     `;
     const posRes = await query(posSql);
@@ -657,6 +672,8 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
       LEFT JOIN users u ON sa.user_id = u.id
       WHERE sa.adjustment_type != 'sale' AND NOT EXISTS (
         SELECT 1 FROM journal_entries je WHERE je.reference = 'adjustment:' || sa.id
+      ) AND NOT EXISTS (
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'adjustment:' || sa.id
       )
     `;
     const adjsRes = await query(adjsSql);
@@ -711,6 +728,13 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
         const saleRes = await client.query('SELECT * FROM sales WHERE id = $1', [id]);
         if (saleRes.rows.length === 0) continue;
         const sale = saleRes.rows[0];
+
+        // Validate closed period
+        const txDate = sale.sale_date || sale.created_at;
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        if (closedCheck.rows.length > 0) {
+          throw new Error(`Cannot post: Sale date falls within closed period ${closedCheck.rows[0].period_name}`);
+        }
 
         // Fetch Sale Items
         const itemsRes = await client.query('SELECT * FROM sale_items WHERE sale_id = $1', [id]);
@@ -786,6 +810,13 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
         if (poRes.rows.length === 0) continue;
         const po = poRes.rows[0];
 
+        // Validate closed period
+        const txDate = po.received_date || po.updated_at || po.created_at;
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        if (closedCheck.rows.length > 0) {
+          throw new Error(`Cannot post: PO date falls within closed period ${closedCheck.rows[0].period_name}`);
+        }
+
         // Create Journal Entry
         const jeRes = await client.query(
           `INSERT INTO journal_entries (entry_date, description, reference, created_by)
@@ -817,6 +848,13 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
         const saRes = await client.query('SELECT * FROM stock_adjustments WHERE id = $1', [id]);
         if (saRes.rows.length === 0) continue;
         const sa = saRes.rows[0];
+
+        // Validate closed period
+        const txDate = sa.created_at;
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        if (closedCheck.rows.length > 0) {
+          throw new Error(`Cannot post: Stock adjustment date falls within closed period ${closedCheck.rows[0].period_name}`);
+        }
 
         // Get product cost price
         const prodRes = await client.query('SELECT cost_price FROM products WHERE id = $1', [sa.product_id]);
@@ -913,6 +951,18 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
     const entryDate = entry_date ? new Date(entry_date) : new Date();
     const ref = reference || 'bank-statement';
 
+    // Validate date against closed periods
+    const closedCheck = await client.query(
+      `SELECT period_name FROM closed_periods 
+       WHERE $1 BETWEEN start_date AND end_date`,
+      [entryDate]
+    );
+    if (closedCheck.rows.length > 0) {
+      res.status(400).json({ error: `Cannot post transaction: The transaction date falls within a closed financial period (${closedCheck.rows[0].period_name}).` });
+      await client.query('ROLLBACK');
+      return;
+    }
+
     const jeRes = await client.query(
       `INSERT INTO journal_entries (entry_date, description, reference, created_by)
        VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -942,6 +992,206 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
   } finally {
     client.release();
   }
-}
+};
+
+// --- REJECT TRANSACTIONS ---
+export const rejectTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { transactions } = req.body; // Array of { reference: string }
+  if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
+    res.status(400).json({ error: 'transactions array is required' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const tx of transactions) {
+      const { reference } = tx;
+      if (!reference) continue;
+      await client.query(
+        `INSERT INTO rejected_transactions (reference, rejected_by)
+         VALUES ($1, $2) ON CONFLICT (reference) DO NOTHING`,
+        [reference, req.user?.id]
+      );
+    }
+    await client.query('COMMIT');
+    await logAudit(req, 'REJECT_TRANSACTIONS', `Rejected ${transactions.length} staged transactions`);
+    res.json({ success: true, message: `Rejected ${transactions.length} transaction(s) successfully` });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+};
+
+// --- GET CLOSED PERIODS ---
+export const getClosedPeriods = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await query(
+      `SELECT cp.*, u.username as closed_by_username, je.description as je_description
+       FROM closed_periods cp
+       LEFT JOIN users u ON cp.closed_by = u.id
+       LEFT JOIN journal_entries je ON cp.journal_entry_id = je.id
+       ORDER BY cp.end_date DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// --- CLOSE PERIOD (MONTHLY/YEARLY) ---
+export const closePeriod = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { period_type, period_name } = req.body;
+
+  if (!period_type || !['month', 'year'].includes(period_type)) {
+    res.status(400).json({ error: 'period_type must be month or year' });
+    return;
+  }
+
+  if (!period_name) {
+    res.status(400).json({ error: 'period_name is required' });
+    return;
+  }
+
+  let start_date: string;
+  let end_date: string;
+
+  if (period_type === 'month') {
+    const match = period_name.match(/^(\d{4})-(\d{2})$/);
+    if (!match) {
+      res.status(400).json({ error: 'period_name must be in YYYY-MM format' });
+      return;
+    }
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]);
+    start_date = `${period_name}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    end_date = `${period_name}-${lastDay}`;
+  } else {
+    const match = period_name.match(/^(\d{4})$/);
+    if (!match) {
+      res.status(400).json({ error: 'period_name must be in YYYY format' });
+      return;
+    }
+    start_date = `${period_name}-01-01`;
+    end_date = `${period_name}-12-31`;
+  }
+
+  const client = await pool.connect();
+  try {
+    const dupCheck = await client.query('SELECT id FROM closed_periods WHERE period_name = $1', [period_name]);
+    if (dupCheck.rows.length > 0) {
+      res.status(400).json({ error: `Period ${period_name} is already closed` });
+      return;
+    }
+
+    await client.query('BEGIN');
+
+    // Calculate balances for revenue and expense accounts
+    const balancesQuery = `
+      SELECT fa.id as account_id, fa.code, fa.name, fa.type,
+             COALESCE(SUM(ji.debit), 0) as total_debit,
+             COALESCE(SUM(ji.credit), 0) as total_credit
+      FROM financial_accounts fa
+      LEFT JOIN journal_items ji ON fa.id = ji.account_id
+      LEFT JOIN journal_entries je ON ji.journal_entry_id = je.id
+      WHERE fa.type IN ('revenue', 'expense')
+        AND je.entry_date BETWEEN $1 AND $2
+      GROUP BY fa.id, fa.code, fa.name, fa.type
+    `;
+    const balancesRes = await client.query(balancesQuery, [start_date, end_date]);
+
+    // Retained Earnings account check
+    const reRes = await client.query("SELECT id FROM financial_accounts WHERE code = '3020'");
+    if (reRes.rows.length === 0) {
+      throw new Error("System account '3020' (Retained Earnings) not found");
+    }
+    const retainedEarningsAccountId = reRes.rows[0].id;
+
+    const journalItems: { account_id: number; debit: number; credit: number }[] = [];
+    let netProfit = 0;
+
+    for (const row of balancesRes.rows) {
+      const debitSum = Number(row.total_debit);
+      const creditSum = Number(row.total_credit);
+      const type = row.type;
+
+      if (type === 'revenue') {
+        const balance = creditSum - debitSum;
+        netProfit += balance;
+        if (balance > 0) {
+          journalItems.push({
+            account_id: row.account_id,
+            debit: balance,
+            credit: 0
+          });
+        }
+      } else if (type === 'expense') {
+        const balance = debitSum - creditSum;
+        netProfit -= balance;
+        if (balance > 0) {
+          journalItems.push({
+            account_id: row.account_id,
+            debit: 0,
+            credit: balance
+          });
+        }
+      }
+    }
+
+    let jeId: number | null = null;
+
+    if (journalItems.length > 0) {
+      if (netProfit > 0) {
+        journalItems.push({
+          account_id: retainedEarningsAccountId,
+          debit: 0,
+          credit: netProfit
+        });
+      } else if (netProfit < 0) {
+        journalItems.push({
+          account_id: retainedEarningsAccountId,
+          debit: Math.abs(netProfit),
+          credit: 0
+        });
+      }
+
+      const jeRes = await client.query(
+        `INSERT INTO journal_entries (entry_date, description, reference, created_by)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [end_date, `Closing entry for period ${period_name}`, `close:${period_type}:${period_name}`, req.user?.id]
+      );
+      jeId = jeRes.rows[0].id;
+
+      for (const item of journalItems) {
+        await client.query(
+          `INSERT INTO journal_items (journal_entry_id, account_id, debit, credit)
+           VALUES ($1, $2, $3, $4)`,
+          [jeId, item.account_id, item.debit, item.credit]
+        );
+      }
+    }
+
+    await client.query(
+      `INSERT INTO closed_periods (period_type, period_name, start_date, end_date, closed_by, journal_entry_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [period_type, period_name, start_date, end_date, req.user?.id, jeId]
+    );
+
+    await client.query('COMMIT');
+    await logAudit(req, 'CLOSE_PERIOD', `Closed period ${period_name} (${period_type})`);
+    res.status(201).json({ success: true, message: `Period ${period_name} closed successfully`, journal_entry_id: jeId });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Server error' });
+  } finally {
+    client.release();
+  }
+};
 
 

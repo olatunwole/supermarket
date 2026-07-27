@@ -1,8 +1,13 @@
 import { Router } from 'express';
-import { getSales, getSaleById, createSale } from '../controllers/salesController';
+import { getSales, getSaleById, createSale, submitScanForSession, getPendingScansForSession } from '../controllers/salesController';
 import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
+
+// Public pairing routes for mobile phone barcode scanning integration
+router.post('/scan-session/:sessionId/scan', submitScanForSession);
+router.get('/scan-session/:sessionId/pending', getPendingScansForSession);
+
 router.use(authenticate);
 
 // Sales CRUD

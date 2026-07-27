@@ -1,7 +1,34 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { pool, query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../middleware/auditLog';
+
+// In-memory queue to pair POS register sessions with mobile camera scanners
+const pendingScans: Record<string, string[]> = {};
+
+export const submitScanForSession = async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  const { barcode } = req.body;
+  
+  if (!barcode) {
+    res.status(400).json({ error: 'barcode is required' });
+    return;
+  }
+  
+  if (!pendingScans[sessionId]) {
+    pendingScans[sessionId] = [];
+  }
+  
+  pendingScans[sessionId].push(barcode);
+  res.json({ success: true, message: `Barcode queued for session ${sessionId}` });
+};
+
+export const getPendingScansForSession = async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  const scans = pendingScans[sessionId] || [];
+  pendingScans[sessionId] = []; // Clear queue on retrieval
+  res.json({ scans });
+};
 
 export const getSales = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

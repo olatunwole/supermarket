@@ -9,8 +9,10 @@ import {
   X,
   SlidersHorizontal,
   FileSpreadsheet,
-  Layers
+  Layers,
+  Barcode as BarcodeIcon
 } from 'lucide-react';
+import { Barcode } from '../components/Barcode';
 
 interface Product {
   id: number;
@@ -39,7 +41,7 @@ interface Supplier {
 }
 
 export const Inventory: React.FC = () => {
-  const { apiFetch, showNotification, user, formatCurrency, currency } = useAuth();
+  const { apiFetch, showNotification, user, formatCurrency, currency, storeSettings } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -47,6 +49,7 @@ export const Inventory: React.FC = () => {
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [barcodeModalProduct, setBarcodeModalProduct] = useState<Product | null>(null);
 
   // Quick stock adjustment state
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
@@ -75,6 +78,32 @@ export const Inventory: React.FC = () => {
     supplier_id: '',
     expiry_date: ''
   });
+
+  const generateRandomBarcode = () => {
+    const prefix = '200';
+    let newBarcode = '';
+    let isUnique = false;
+    let attempts = 0;
+    
+    while (!isUnique && attempts < 100) {
+      const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+      const tempBarcode = prefix + randomPart;
+      
+      const exists = products.some(p => p.barcode === tempBarcode);
+      if (!exists) {
+        newBarcode = tempBarcode;
+        isUnique = true;
+      }
+      attempts++;
+    }
+    
+    if (newBarcode) {
+      setFormData(prev => ({ ...prev, barcode: newBarcode }));
+      showNotification('Unique barcode generated successfully', 'success');
+    } else {
+      showNotification('Failed to generate a unique barcode. Try again.', 'error');
+    }
+  };
 
   const fetchInitialData = async () => {
     try {
@@ -105,6 +134,7 @@ export const Inventory: React.FC = () => {
     setAdjType('audit');
     setAdjReason('');
     setIsAdjModalOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleQuickAdjustmentSubmit = async (e: React.FormEvent) => {
@@ -153,6 +183,7 @@ export const Inventory: React.FC = () => {
       expiry_date: ''
     });
     setIsModalOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleOpenEditModal = (prod: Product) => {
@@ -170,6 +201,7 @@ export const Inventory: React.FC = () => {
       expiry_date: prod.expiry_date ? prod.expiry_date.split('T')[0] : ''
     });
     setIsModalOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteProduct = async (id: number) => {
@@ -190,8 +222,26 @@ export const Inventory: React.FC = () => {
       return;
     }
 
+    let finalBarcode = formData.barcode;
+    if (!editingProduct && !finalBarcode) {
+      const prefix = '200';
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 100) {
+        const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+        const tempBarcode = prefix + randomPart;
+        const exists = products.some(p => p.barcode === tempBarcode);
+        if (!exists) {
+          finalBarcode = tempBarcode;
+          isUnique = true;
+        }
+        attempts++;
+      }
+    }
+
     const payload = {
       ...formData,
+      barcode: finalBarcode || null,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
       supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
       unit_price: parseFloat(formData.unit_price),
@@ -407,12 +457,32 @@ export const Inventory: React.FC = () => {
 
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">UPC Barcode</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={formData.barcode} 
-                  onChange={e => setFormData({ ...formData, barcode: e.target.value })} 
-                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={formData.barcode} 
+                    onChange={e => setFormData({ ...formData, barcode: e.target.value })} 
+                    placeholder="Auto-generated if empty"
+                    style={{ flexGrow: 1 }}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={generateRandomBarcode}
+                    style={{ 
+                      padding: '0 12px', 
+                      fontSize: '0.8rem', 
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      height: '40px'
+                    }}
+                  >
+                    <BarcodeIcon size={14} />
+                    Generate
+                  </button>
+                </div>
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -573,7 +643,7 @@ export const Inventory: React.FC = () => {
                 <th style={{ padding: '16px' }}>Pricing</th>
                 <th style={{ padding: '16px' }}>Inventory Level</th>
                 <th style={{ padding: '16px' }}>Expiry Date</th>
-                <th style={{ padding: '16px', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '16px', textAlign: 'left' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -625,11 +695,16 @@ export const Inventory: React.FC = () => {
                           <span style={{ color: 'var(--text-muted)' }}>None</span>
                         )}
                       </td>
-                      <td style={{ padding: '16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <td style={{ padding: '16px', textAlign: 'left' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
                           <button className="btn-icon" title="Quick Adjust Stock" onClick={() => handleOpenAdjModal(prod)}>
                             <SlidersHorizontal size={14} />
                           </button>
+                          {prod.barcode && (
+                            <button className="btn-icon" title="View & Print Barcode Label" onClick={() => setBarcodeModalProduct(prod)}>
+                              <BarcodeIcon size={14} />
+                            </button>
+                          )}
                           {user && ['admin', 'manager'].includes(user.role) && (
                             <>
                               <button className="btn-icon" title="Edit Catalog" onClick={() => handleOpenEditModal(prod)}>
@@ -651,7 +726,58 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
+      {barcodeModalProduct && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1000 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '400px', padding: '24px' }}>
+            <div className="modal-header">
+              <h3>Barcode Label</h3>
+              <button type="button" className="btn-close" onClick={() => setBarcodeModalProduct(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div id="print-label-container" className="print-label-area" style={{ 
+              background: '#ffffff', 
+              color: '#000000', 
+              padding: '24px', 
+              borderRadius: '8px', 
+              border: '1px solid #e2e8f0',
+              textAlign: 'center',
+              margin: '16px 0'
+            }}>
+              <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>
+                {storeSettings?.name || 'Antigravity Supermarket'}
+              </div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                {barcodeModalProduct.name}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+                <Barcode 
+                  value={barcodeModalProduct.barcode || ''} 
+                  lineColor="#000000" 
+                  background="#ffffff"
+                  width={1.8}
+                  height={60}
+                />
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', marginTop: '8px' }}>
+                {formatCurrency(barcodeModalProduct.unit_price)}
+              </div>
+            </div>
 
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setBarcodeModalProduct(null)}>
+                Close
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => {
+                window.print();
+              }}>
+                Print Label
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

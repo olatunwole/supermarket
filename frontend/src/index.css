@@ -126,8 +126,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .form-select option {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme='light'] .form-select option,
+:root[data-theme='light'] select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme='dark'] .form-select option,
+:root[data-theme='dark'] select option {
+  background-color: #131a2e !important;
+  color: #f3f4f6 !important;
 }
 
 /* Buttons */
@@ -518,3 +530,32 @@ table td *:not(.badge):not(.btn):not(button):not(svg):not(path),
 :root[data-theme='light'] .sidebar-footer {
   border-top-color: rgba(0, 0, 0, 0.08) !important;
 }
+
+/* Printable Barcode Label Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-label-container, #print-label-container * {
+    visibility: visible;
+  }
+  #print-label-container {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 80mm;
+    height: 50mm;
+    border: none !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+}
+

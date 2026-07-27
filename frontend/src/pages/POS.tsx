@@ -11,8 +11,11 @@ import {
   Percent,
   Receipt,
   X,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Camera,
+  Smartphone
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface Product {
   id: number;
@@ -47,6 +50,105 @@ export const POS: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Camera Barcode Scanner State
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  // Mobile Scanner pairing states
+  const [sessionId] = useState(() => 'reg-' + Math.random().toString(36).substring(2, 11));
+  const [isMobileLinkOpen, setIsMobileLinkOpen] = useState(false);
+
+  // Synthesize scan audio confirmation (Web Audio API oscillator)
+  const playScanBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 1200; // 1.2kHz high-pitch POS confirmation beep
+      gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime); // keep it subtle
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.08); // 80ms beep
+    } catch (err) {
+      console.error("Audio beep playback error:", err);
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+      } catch (err) {
+        console.error('Error stopping scanner:', err);
+      }
+      scannerRef.current = null;
+    }
+  };
+
+  const startScanner = () => {
+    setIsScannerOpen(true);
+    setTimeout(() => {
+      try {
+        const html5Qrcode = new Html5Qrcode("pos-camera-reader");
+        scannerRef.current = html5Qrcode;
+        
+        html5Qrcode.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: (width, height) => {
+              // Wide aspect ratio box ideal for horizontal barcodes
+              const boxWidth = Math.min(width * 0.85, 280);
+              const boxHeight = Math.min(height * 0.35, 90);
+              return { width: boxWidth, height: boxHeight };
+            },
+            aspectRatio: 1.777778
+          },
+          (decodedText) => {
+            playScanBeep();
+            
+            // Look for matching product
+            const targetProd = products.find(p => p.barcode === decodedText || p.sku === decodedText);
+            if (targetProd) {
+              addToCart(targetProd);
+              showNotification(`Scanned: ${targetProd.name}`, 'success');
+            } else {
+              showNotification(`Barcode ${decodedText} not found in inventory`, 'warning');
+            }
+            
+            stopScanner();
+            setIsScannerOpen(false);
+          },
+          () => {
+            // Keep scanning silently
+          }
+        ).catch(err => {
+          console.error("Camera start failure:", err);
+          showNotification("Camera access denied or busy.", "error");
+          setIsScannerOpen(false);
+        });
+      } catch (err: any) {
+        console.error("Scanner initialization failed:", err);
+        showNotification("Failed to boot camera scanner.", "error");
+        setIsScannerOpen(false);
+      }
+    }, 300);
+  };
+
+  // Stop camera stream if the component unmounts
+  useEffect(() => {
+    return () => {
+      stopScanner();
+    };
+  }, []);
 
   // Load Inventory Products
   const loadProducts = async () => {
@@ -61,6 +163,34 @@ export const POS: React.FC = () => {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Background polling for mobile companion camera scans
+  useEffect(() => {
+    let intervalId: any;
+
+    const pollPendingScans = async () => {
+      try {
+        const res = await apiFetch<{ scans: string[] }>(`/api/sales/scan-session/${sessionId}/pending`);
+        if (res && res.scans && res.scans.length > 0) {
+          res.scans.forEach(barcode => {
+            const targetProd = products.find(p => p.barcode === barcode || p.sku === barcode);
+            if (targetProd) {
+              addToCart(targetProd);
+              playScanBeep();
+              showNotification(`Mobile Scanned: ${targetProd.name}`, 'success');
+            } else {
+              showNotification(`Scanned barcode ${barcode} not found`, 'warning');
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Failed to poll mobile scans:", err);
+      }
+    };
+
+    intervalId = setInterval(pollPendingScans, 1500);
+    return () => clearInterval(intervalId);
+  }, [sessionId, products]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -213,7 +343,7 @@ export const POS: React.FC = () => {
   const { subtotal, taxAmt, finalTotal } = calculateTotals();
 
   return (
-    <div className="pos-layout" style={{ height: 'calc(100vh - 100px)', display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', padding: '8px 0' }}>
+    <div className="pos-layout" style={{ height: 'calc(100vh - 160px)', display: 'grid', gridTemplateColumns: '1fr 350px', gap: '20px', padding: '0', width: '100%', boxSizing: 'border-box' }}>
       
       {/* Catalog & Search (Left side) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0 }}>
@@ -221,19 +351,55 @@ export const POS: React.FC = () => {
         {/* POS Sub-header actions */}
         <div className="flex-space" style={{ flexWrap: 'wrap', gap: '10px' }}>
           
-          {/* Search Input */}
-          <div style={{ position: 'relative', width: '320px' }}>
-            <Search size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-muted)' }} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '36px', height: '40px', margin: 0 }}
-              placeholder="Scan barcode or type SKU/name..."
-              value={search}
-              onKeyDown={handleSearchKeyDown}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          {/* Search & Camera Scan Row */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ position: 'relative', width: '320px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-muted)' }} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="form-input"
+                style={{ paddingLeft: '36px', height: '40px', margin: 0 }}
+                placeholder="Scan barcode or type SKU/name..."
+                value={search}
+                onKeyDown={handleSearchKeyDown}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            
+            <button 
+              type="button" 
+              onClick={startScanner}
+              title="Scan Barcode via PC Webcam"
+              style={{ 
+                height: '40px', 
+                padding: '0 16px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Camera size={16} />
+              <span>Camera Scan</span>
+            </button>
+
+            <button 
+              type="button" 
+              onClick={() => setIsMobileLinkOpen(true)}
+              title="Link Phone Scanner"
+              style={{ 
+                height: '40px', 
+                padding: '0 16px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Smartphone size={16} />
+              <span>Link Phone</span>
+            </button>
           </div>
 
         </div>
@@ -466,6 +632,96 @@ export const POS: React.FC = () => {
         </div>
       )}
 
+      {isScannerOpen && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1100 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '480px', width: '90%', padding: '24px', textAlign: 'center' }}>
+            <div className="modal-header">
+              <h3>Scan Barcode</h3>
+              <button type="button" className="btn-close" onClick={() => {
+                stopScanner();
+                setIsScannerOpen(false);
+              }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Hold product barcode up to the camera
+            </p>
+
+            <div style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', background: '#000000', border: '1px solid var(--glass-border)' }}>
+              <div id="pos-camera-reader" style={{ width: '100%' }} />
+              
+              <div style={{
+                position: 'absolute',
+                left: '10%',
+                right: '10%',
+                top: '50%',
+                height: '2px',
+                background: 'rgba(244, 63, 94, 0.85)',
+                boxShadow: '0 0 8px rgba(244, 63, 94, 0.8)',
+                zIndex: 10,
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+                animation: 'pulseGlow 1.5s infinite alternate'
+              }} />
+            </div>
+
+            <div style={{ marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                style={{ width: '100%' }} 
+                onClick={() => {
+                  stopScanner();
+                  setIsScannerOpen(false);
+                }}
+              >
+                Cancel Scan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMobileLinkOpen && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1100 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '400px', width: '90%', padding: '24px', textAlign: 'center' }}>
+            <div className="modal-header">
+              <h3>Link Phone Scanner</h3>
+              <button type="button" className="btn-close" onClick={() => setIsMobileLinkOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Scan this QR code with your phone's camera to pair it as a barcode scanner.
+            </p>
+
+            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', display: 'inline-block', marginBottom: '16px' }}>
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(window.location.origin + '/scan-companion?session=' + sessionId)}`}
+                alt="Scanner Pairing QR Code"
+                style={{ display: 'block', width: '220px', height: '220px' }}
+              />
+            </div>
+
+            <div style={{ wordBreak: 'break-all', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '20px', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px' }}>
+              URL: {window.location.origin}/scan-companion?session={sessionId}
+            </div>
+
+            <button 
+              type="button" 
+              className="btn btn-primary" 
+              style={{ width: '100%' }} 
+              onClick={() => setIsMobileLinkOpen(false)}
+            >
+              Done / Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Custom Styles */}
       <style dangerouslySetInnerHTML={{__html: `
         .pos-prod-card:hover {
@@ -481,6 +737,15 @@ export const POS: React.FC = () => {
         }
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+        @keyframes pulseGlow {
+          from { opacity: 0.3; }
+          to { opacity: 1; }
+        }
+        #pos-camera-reader video {
+          object-fit: cover !important;
+          width: 100% !important;
+          height: 100% !important;
         }
       `}} />
 
