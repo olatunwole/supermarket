@@ -315,6 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await res.json();
       if (!res.ok) {
+        console.error('Login request failed with payload:', data);
         return { success: false, error: data.error || 'Login failed' };
       }
       localStorage.setItem('pos_token', data.token);
@@ -323,7 +324,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data.user);
       showNotification(`Welcome back, ${data.user.username}!`, 'success');
       return { success: true };
-    } catch {
+    } catch (err: any) {
+      console.error('Login request caught network exception:', err);
       return { success: false, error: 'Network error connecting to server' };
     }
   };
