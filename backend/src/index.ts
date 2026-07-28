@@ -17,9 +17,13 @@ import { autoInitDatabase } from './db/autoInit';
 dotenv.config();
 
 // Auto-run DB migrations and seeds on launch
-autoInitDatabase().then(() => {
-  console.log('[AutoInit] DB initialization flow finished.');
-});
+autoInitDatabase()
+  .then(() => {
+    console.log('[AutoInit] DB initialization flow finished.');
+  })
+  .catch((err) => {
+    console.error('[AutoInit] DB initialization flow failed:', err);
+  });
 
 const app = express();
 const PORT = process.env.PORT || 3001;

@@ -2,8 +2,9 @@ import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
 
 export const autoInitDatabase = async () => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     console.log('[AutoInit] Checking database tables...');
 
     // 1. Create tables
@@ -250,6 +251,8 @@ export const autoInitDatabase = async () => {
   } catch (err) {
     console.error('[AutoInit] Initialization error:', err);
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
   }
 };
