@@ -12,8 +12,14 @@ import purchaseOrderRoutes from './routes/purchaseOrders';
 import reportRoutes from './routes/reports';
 import financialsRoutes from './routes/financials';
 import { errorHandler } from './middleware/errorHandler';
+import { autoInitDatabase } from './db/autoInit';
 
 dotenv.config();
+
+// Auto-run DB migrations and seeds on launch
+autoInitDatabase().then(() => {
+  console.log('[AutoInit] DB initialization flow finished.');
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
