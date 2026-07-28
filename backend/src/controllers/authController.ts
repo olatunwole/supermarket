@@ -35,8 +35,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       token,
       user: { id: user.id, username: user.username, email: user.email, role: user.role },
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error', stack: err.stack });
   }
 };
 
