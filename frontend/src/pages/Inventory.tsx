@@ -146,6 +146,16 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const formatDateString = (dateStr: string | null): string => {
+    if (!dateStr) return 'None';
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const parts = cleanDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return new Date(dateStr).toLocaleDateString();
+  };
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
@@ -466,17 +476,41 @@ export const Inventory: React.FC = () => {
         const parseDateString = (val: any): string | null => {
           if (!val) return null;
           if (val instanceof Date) {
-            return val.toISOString().split('T')[0];
+            const y = val.getFullYear();
+            const m = String(val.getMonth() + 1).padStart(2, '0');
+            const d = String(val.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
           }
           if (typeof val === 'number') {
             const date = new Date((val - 25569) * 86400 * 1000);
-            return date.toISOString().split('T')[0];
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
           }
-          const match = String(val).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-          if (match) {
-            const y = match[1];
-            const m = match[2].padStart(2, '0');
-            const d = match[3].padStart(2, '0');
+          const str = String(val).trim();
+          
+          const matchYMD = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+          if (matchYMD) {
+            const y = matchYMD[1];
+            const m = matchYMD[2].padStart(2, '0');
+            const d = matchYMD[3].padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          }
+          
+          const matchDMY = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+          if (matchDMY) {
+            const d = matchDMY[1].padStart(2, '0');
+            const m = matchDMY[2].padStart(2, '0');
+            const y = matchDMY[3];
+            return `${y}-${m}-${d}`;
+          }
+          
+          const parsed = new Date(str);
+          if (!isNaN(parsed.getTime())) {
+            const y = parsed.getFullYear();
+            const m = String(parsed.getMonth() + 1).padStart(2, '0');
+            const d = String(parsed.getDate()).padStart(2, '0');
             return `${y}-${m}-${d}`;
           }
           return null;
@@ -957,9 +991,19 @@ export const Inventory: React.FC = () => {
                   const isLowStock = prod.quantity_on_hand <= prod.reorder_threshold;
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  const expDate = prod.expiry_date ? new Date(prod.expiry_date) : null;
-                  if (expDate) {
-                    expDate.setHours(0, 0, 0, 0);
+                  
+                  let expDate: Date | null = null;
+                  if (prod.expiry_date) {
+                    const cleanDate = prod.expiry_date.includes('T') ? prod.expiry_date.split('T')[0] : prod.expiry_date;
+                    const parts = cleanDate.split('-');
+                    if (parts.length === 3) {
+                      expDate = new Date();
+                      expDate.setFullYear(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                      expDate.setHours(0, 0, 0, 0);
+                    } else {
+                      expDate = new Date(prod.expiry_date);
+                      expDate.setHours(0, 0, 0, 0);
+                    }
                   }
                   const isExpired = expDate ? expDate < today : false;
                   return (
@@ -992,8 +1036,8 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td style={{ padding: '16px' }}>
                         {prod.expiry_date ? (
-                          <div style={{ color: isExpired ? '#ff4d4d' : 'var(--text-primary)', fontWeight: isExpired ? 600 : 'normal' }}>
-                            {new Date(prod.expiry_date).toLocaleDateString()}
+                          <div style={{ color: isExpired ? '#ef4444' : 'var(--text-primary)', fontWeight: isExpired ? 600 : 'normal' }}>
+                            {formatDateString(prod.expiry_date)}
                           </div>
                         ) : (
                           <span style={{ color: 'var(--text-muted)' }}>None</span>
