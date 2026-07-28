@@ -60,6 +60,20 @@ export const Inventory: React.FC = () => {
   const [uploadedFileName, setUploadedFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Quick Add Sub-modals inside product form
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDesc, setNewCategoryDesc] = useState('');
+
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [newSupplierData, setNewSupplierData] = useState({
+    name: '',
+    contact_name: '',
+    email: '',
+    phone: '',
+    address: ''
+  });
+
   // Quick stock adjustment state
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
   const [adjProduct, setAdjProduct] = useState<Product | null>(null);
@@ -256,6 +270,45 @@ export const Inventory: React.FC = () => {
     });
     setIsModalOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCreateCategoryQuick = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    try {
+      const created = await apiFetch<Category>('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCategoryName.trim(), description: newCategoryDesc.trim() })
+      });
+      showNotification('Category added successfully!', 'success');
+      setCategories(prev => [...prev, created]);
+      setFormData(prev => ({ ...prev, category_id: created.id.toString() }));
+      setIsCategoryModalOpen(false);
+      setNewCategoryName('');
+      setNewCategoryDesc('');
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to create category', 'error');
+    }
+  };
+
+  const handleCreateSupplierQuick = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupplierData.name.trim()) return;
+    try {
+      const created = await apiFetch<Supplier>('/api/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSupplierData)
+      });
+      showNotification('Supplier added successfully!', 'success');
+      setSuppliers(prev => [...prev, created]);
+      setFormData(prev => ({ ...prev, supplier_id: created.id.toString() }));
+      setIsSupplierModalOpen(false);
+      setNewSupplierData({ name: '', contact_name: '', email: '', phone: '', address: '' });
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to create supplier', 'error');
+    }
   };
 
   const handleDeleteProduct = async (id: number) => {
@@ -817,7 +870,12 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Category *</label>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Category *</span>
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0px 6px', fontSize: '0.7rem', height: 'auto', border: 'none', background: 'transparent', color: 'var(--accent-cyan)' }} onClick={() => setIsCategoryModalOpen(true)}>
+                    + New Category
+                  </button>
+                </label>
                 <select 
                   className="form-select" 
                   value={formData.category_id} 
@@ -829,7 +887,12 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Supplier *</label>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Supplier *</span>
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0px 6px', fontSize: '0.7rem', height: 'auto', border: 'none', background: 'transparent', color: 'var(--accent-cyan)' }} onClick={() => setIsSupplierModalOpen(true)}>
+                    + New Supplier
+                  </button>
+                </label>
                 <select 
                   className="form-select" 
                   value={formData.supplier_id} 
@@ -1268,6 +1331,111 @@ export const Inventory: React.FC = () => {
                 {importProgress ? 'Importing...' : `Import ${importRows.filter(r => r.isValid).length} Products`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD SUB-MODAL: NEW CATEGORY */}
+      {isCategoryModalOpen && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1200 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '400px', width: '90%', padding: '20px', borderRadius: '16px' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Quick Add Category</h3>
+              <button type="button" className="btn-close" onClick={() => setIsCategoryModalOpen(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreateCategoryQuick}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Category Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newCategoryName} 
+                    onChange={e => setNewCategoryName(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Description</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newCategoryDesc} 
+                    onChange={e => setNewCategoryDesc(e.target.value)} 
+                  />
+                </div>
+              </div>
+              <div className="modal-actions" style={{ marginTop: '16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsCategoryModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Category</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD SUB-MODAL: NEW SUPPLIER */}
+      {isSupplierModalOpen && (
+        <div className="modal-backdrop flex-center" style={{ zIndex: 1200 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '450px', width: '90%', padding: '20px', borderRadius: '16px' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Quick Add Supplier</h3>
+              <button type="button" className="btn-close" onClick={() => setIsSupplierModalOpen(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreateSupplierQuick}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Supplier Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newSupplierData.name} 
+                    onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })} 
+                    required 
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Contact Person</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newSupplierData.contact_name} 
+                    onChange={e => setNewSupplierData({ ...newSupplierData, contact_name: e.target.value })} 
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Email Address</label>
+                  <input 
+                    type="email" 
+                    className="form-input" 
+                    value={newSupplierData.email} 
+                    onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })} 
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Phone Number</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newSupplierData.phone} 
+                    onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })} 
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Street Address</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newSupplierData.address} 
+                    onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })} 
+                  />
+                </div>
+              </div>
+              <div className="modal-actions" style={{ marginTop: '16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsSupplierModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Supplier</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

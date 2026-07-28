@@ -46,12 +46,18 @@ interface Product {
   cost_price: string | number;
 }
 
+interface Category {
+  id: number;
+  name: string;
+}
+
 export const PurchaseOrders: React.FC = () => {
-  const { apiFetch, showNotification, user, formatCurrency, currency } = useAuth();
+  const { apiFetch, showNotification, user, formatCurrency, currency, rates } = useAuth();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
   // New PO creation modal
@@ -67,6 +73,28 @@ export const PurchaseOrders: React.FC = () => {
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('10');
   const [unitCost, setUnitCost] = useState('');
+
+  // Quick addition modals state
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [newSupplierData, setNewSupplierData] = useState({
+    name: '',
+    contact_name: '',
+    email: '',
+    phone: '',
+    address: ''
+  });
+
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [newProductData, setNewProductData] = useState({
+    name: '',
+    sku: '',
+    barcode: '',
+    category_id: '',
+    unit_price: '',
+    cost_price: '',
+    reorder_threshold: '10',
+    expiry_date: ''
+  });
 
   const fetchOrders = async () => {
     try {
@@ -84,12 +112,14 @@ export const PurchaseOrders: React.FC = () => {
     fetchOrders();
     const fetchMetadata = async () => {
       try {
-        const [sups, prods] = await Promise.all([
+        const [sups, prods, cats] = await Promise.all([
           apiFetch<Supplier[]>('/api/suppliers'),
-          apiFetch<Product[]>('/api/products')
+          apiFetch<Product[]>('/api/products'),
+          apiFetch<Category[]>('/api/categories')
         ]);
         setSuppliers(sups);
         setProducts(prods);
+        setCategories(cats);
       } catch {}
     };
     fetchMetadata();
@@ -198,6 +228,119 @@ export const PurchaseOrders: React.FC = () => {
       setExpandedOrderId(orderId);
     } catch (err: any) {
       showNotification(err.message || 'Failed to load PO details', 'error');
+    }
+  };
+
+  const handleCreateSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupplierData.name.trim()) return;
+    try {
+      const created = await apiFetch<Supplier>('/api/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSupplierData)
+      });
+      showNotification('Supplier added successfully!', 'success');
+      setSuppliers(prev => [...prev, created]);
+      setSupplierId(created.id.toString());
+      setIsSupplierModalOpen(false);
+      setNewSupplierData({ name: '', contact_name: '', email: '', phone: '', address: '' });
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to create supplier', 'error');
+    }
+  };
+
+  const generateNewProductBarcode = () => {
+    const prefix = '200';
+    const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+    const tempBarcode = prefix + randomPart;
+    setNewProductData(prev => ({ ...prev, barcode: tempBarcode }));
+  };
+
+  const generateNewProductSku = () => {
+    if (newProductData.barcode) {
+      setNewProductData(prev => ({ ...prev, sku: prev.barcode }));
+      return;
+    }
+    const prefix = '200';
+    const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+    const tempSku = prefix + randomPart;
+    setNewProductData(prev => ({ ...prev, sku: tempSku, barcode: tempSku }));
+  };
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductData.name || !newProductData.unit_price || !newProductData.cost_price || !newProductData.expiry_date) {
+      showNotification('Please fill in Name, Cost Price, Retail Price, and Expiry Date', 'warning');
+      return;
+    }
+
+    let finalBarcode = newProductData.barcode.trim();
+    let finalSku = newProductData.sku.trim();
+
+    if (!finalBarcode) {
+      const prefix = '200';
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 100) {
+        const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
+        const tempBarcode = prefix + randomPart;
+        const exists = products.some(p => p.id.toString() === tempBarcode);
+        if (!exists) {
+          finalBarcode = tempBarcode;
+          isUnique = true;
+        }
+        attempts++;
+      }
+    }
+
+    if (!finalSku) {
+      finalSku = finalBarcode;
+    }
+
+    const activeRate = rates[currency] || 1;
+    const gbpCostPrice = parseFloat(newProductData.cost_price) / activeRate;
+    const gbpUnitPrice = parseFloat(newProductData.unit_price) / activeRate;
+
+    try {
+      const created = await apiFetch<any>('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newProductData.name,
+          sku: finalSku,
+          barcode: finalBarcode || null,
+          category_id: newProductData.category_id ? parseInt(newProductData.category_id) : null,
+          unit_price: gbpUnitPrice,
+          cost_price: gbpCostPrice,
+          quantity_on_hand: 0,
+          reorder_threshold: parseInt(newProductData.reorder_threshold),
+          supplier_id: supplierId ? parseInt(supplierId) : null,
+          expiry_date: newProductData.expiry_date || null
+        })
+      });
+      showNotification('Product added successfully!', 'success');
+      const newProd: Product = {
+        id: created.id,
+        name: created.name,
+        cost_price: created.cost_price
+      };
+      setProducts(prev => [...prev, newProd]);
+      setSelectedProductId(created.id.toString());
+      setUnitCost(newProductData.cost_price);
+      setIsProductModalOpen(false);
+      setNewProductData({
+        name: '',
+        sku: '',
+        barcode: '',
+        category_id: categories[0]?.id.toString() || '',
+        unit_price: '',
+        cost_price: '',
+        reorder_threshold: '10',
+        expiry_date: ''
+      });
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to create product', 'error');
     }
   };
 
@@ -346,7 +489,12 @@ export const PurchaseOrders: React.FC = () => {
             <form onSubmit={handleCreatePoSubmit}>
               <div className="modal-form-grid" style={{ marginBottom: '16px' }}>
                 <div className="form-group span-cols">
-                  <label className="form-label">Assign Supplier *</label>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Assign Supplier *</span>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: '0.75rem', height: 'auto' }} onClick={() => setIsSupplierModalOpen(true)}>
+                      + New Supplier
+                    </button>
+                  </label>
                   <select className="form-select" value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
                     <option value="">-- Select Supplier --</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -359,7 +507,17 @@ export const PurchaseOrders: React.FC = () => {
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '12px' }}>Add Products</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '10px', alignItems: 'end' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Product</label>
+                    <label className="form-label" style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Product</span>
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0px 6px', fontSize: '0.7rem', height: 'auto', border: 'none', background: 'transparent', color: 'var(--accent-cyan)' }} onClick={() => {
+                        if (categories.length > 0 && !newProductData.category_id) {
+                          setNewProductData(prev => ({ ...prev, category_id: categories[0].id.toString() }));
+                        }
+                        setIsProductModalOpen(true);
+                      }}>
+                        + Add New
+                      </button>
+                    </label>
                     <select className="form-select" style={{ padding: '8px 12px', fontSize: '0.85rem' }} value={selectedProductId} onChange={e => handleProductChange(e.target.value)}>
                       <option value="">-- Choose Product --</option>
                       {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -411,6 +569,118 @@ export const PurchaseOrders: React.FC = () => {
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Create PO Draft</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD VENDOR MODAL */}
+      {isSupplierModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '450px', borderRadius: '16px' }}>
+            <div className="modal-header">
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Quick Add Supplier</h2>
+              <button className="btn-close" onClick={() => setIsSupplierModalOpen(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreateSupplier}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Supplier/Company Name *</label>
+                  <input type="text" className="form-input" value={newSupplierData.name} onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Contact Person Name</label>
+                  <input type="text" className="form-input" value={newSupplierData.contact_name} onChange={e => setNewSupplierData({ ...newSupplierData, contact_name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input type="email" className="form-input" value={newSupplierData.email} onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone Number</label>
+                  <input type="text" className="form-input" value={newSupplierData.phone} onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Postal/Street Address</label>
+                  <input type="text" className="form-input" value={newSupplierData.address} onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })} />
+                </div>
+              </div>
+              <div className="modal-actions" style={{ marginTop: '20px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsSupplierModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Supplier</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD PRODUCT MODAL */}
+      {isProductModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
+          <div className="modal-content glass-card" style={{ maxWidth: '550px', borderRadius: '16px' }}>
+            <div className="modal-header">
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Quick Add Product</h2>
+              <button className="btn-close" onClick={() => setIsProductModalOpen(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreateProduct}>
+              <div className="modal-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group span-cols" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Product Name *</label>
+                  <input type="text" className="form-input" value={newProductData.name} onChange={e => setNewProductData({ ...newProductData, name: e.target.value })} required />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>SKU Code</span>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0px 6px', fontSize: '0.7rem', height: 'auto', border: 'none', background: 'transparent', color: 'var(--accent-cyan)' }} onClick={generateNewProductSku}>
+                      Generate
+                    </button>
+                  </label>
+                  <input type="text" className="form-input" placeholder="Auto-generated if empty" value={newProductData.sku} onChange={e => setNewProductData({ ...newProductData, sku: e.target.value })} />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Barcode / QR Code</span>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0px 6px', fontSize: '0.7rem', height: 'auto', border: 'none', background: 'transparent', color: 'var(--accent-cyan)' }} onClick={generateNewProductBarcode}>
+                      Generate
+                    </button>
+                  </label>
+                  <input type="text" className="form-input" placeholder="Auto-generated if empty" value={newProductData.barcode} onChange={e => setNewProductData({ ...newProductData, barcode: e.target.value })} />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Category *</label>
+                  <select className="form-select" value={newProductData.category_id} onChange={e => setNewProductData({ ...newProductData, category_id: e.target.value })} required>
+                    <option value="">-- Choose Category --</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Reorder Level Threshold *</label>
+                  <input type="number" className="form-input" value={newProductData.reorder_threshold} onChange={e => setNewProductData({ ...newProductData, reorder_threshold: e.target.value })} required />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Cost Price ({currency}) *</label>
+                  <input type="number" step="0.01" className="form-input" value={newProductData.cost_price} onChange={e => setNewProductData({ ...newProductData, cost_price: e.target.value })} required />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Retail / Unit Price ({currency}) *</label>
+                  <input type="number" step="0.01" className="form-input" value={newProductData.unit_price} onChange={e => setNewProductData({ ...newProductData, unit_price: e.target.value })} required />
+                </div>
+
+                <div className="form-group span-cols" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Batch Expiry Date *</label>
+                  <input type="date" className="form-input" value={newProductData.expiry_date} onChange={e => setNewProductData({ ...newProductData, expiry_date: e.target.value })} required />
+                </div>
+              </div>
+              <div className="modal-actions" style={{ marginTop: '20px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsProductModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Product</button>
               </div>
             </form>
           </div>
