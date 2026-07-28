@@ -307,7 +307,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (username: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const apiBaseUrl = (import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '');
+      const res = await fetch(`${apiBaseUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -349,7 +350,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       headers,
     };
 
-    const targetUrl = url.startsWith('/') ? url : `/${url}`;
+    const apiBaseUrl = (import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '');
+    const cleanUrl = url.startsWith('/') ? url : `/${url}`;
+    const targetUrl = `${apiBaseUrl}${cleanUrl}`;
     const response = await fetch(targetUrl, config);
     
     if (response.status === 401) {

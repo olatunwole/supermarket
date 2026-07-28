@@ -92,7 +92,8 @@ export const ScanCompanion: React.FC = () => {
     setScanHistory(prev => [newEntry, ...prev]);
 
     try {
-      const response = await fetch(`/api/sales/scan-session/${sessionId}/scan`, {
+      const apiBaseUrl = (import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${apiBaseUrl}/api/sales/scan-session/${sessionId}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ barcode: cleanedCode })
