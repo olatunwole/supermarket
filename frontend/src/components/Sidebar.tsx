@@ -12,10 +12,11 @@ import {
   Store,
   BarChart3,
   Settings,
-  Landmark
+  Landmark,
+  X
 } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
+export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ isOpen, onClose }) => {
   const { user, logout, storeSettings } = useAuth();
 
   if (!user) return null;
@@ -90,7 +91,7 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="glass-card sidebar-container">
+    <aside className={`glass-card sidebar-container ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-brand">
         {storeSettings.logo ? (
           <img src={storeSettings.logo} alt="Logo" className="brand-icon" style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '4px' }} />
@@ -103,6 +104,9 @@ export const Sidebar: React.FC = () => {
           </h2>
           <span>Store POS Terminal</span>
         </div>
+        <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">
+          <X size={20} />
+        </button>
       </div>
 
       <div className="sidebar-profile">
@@ -121,6 +125,7 @@ export const Sidebar: React.FC = () => {
             key={link.to}
             to={link.to}
             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+            onClick={onClose}
           >
             {link.icon}
             <span>{link.label}</span>
@@ -128,7 +133,7 @@ export const Sidebar: React.FC = () => {
         ))}
       </nav>
 
-      <button className="sidebar-logout" onClick={logout}>
+      <button className="sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
         <LogOut size={20} />
         <span>Sign Out</span>
       </button>
@@ -150,6 +155,7 @@ export const Sidebar: React.FC = () => {
           background: var(--bg-secondary);
           padding: 24px 16px;
           z-index: 100;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .sidebar-brand {
@@ -279,6 +285,39 @@ export const Sidebar: React.FC = () => {
         .sidebar-logout:hover {
           background: var(--error-rose-glow);
           border-color: var(--error-rose);
+        }
+
+        .sidebar-close-btn {
+          display: none;
+        }
+
+        @media (max-width: 1024px) {
+          .sidebar-container {
+            transform: translateX(-100%);
+            border-right: 1px solid var(--glass-border);
+            border-top-right-radius: var(--border-radius-lg);
+            border-bottom-right-radius: var(--border-radius-lg);
+          }
+
+          .sidebar-container.open {
+            transform: translateX(0);
+          }
+
+          .sidebar-close-btn {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            background: transparent !important;
+            border: none !important;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px !important;
+            margin-left: auto;
+          }
+
+          .sidebar-close-btn:hover {
+            color: var(--text-primary);
+          }
         }
       `}} />
     </aside>

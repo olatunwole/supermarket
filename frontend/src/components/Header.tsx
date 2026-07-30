@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, Clock, X, Sun, Moon } from 'lucide-react';
+import { Calendar, Clock, X, Sun, Moon, Menu } from 'lucide-react';
 
-export const Header: React.FC = () => {
+export const Header: React.FC<{ onToggleSidebar?: () => void }> = ({ onToggleSidebar }) => {
   const { user, storeSettings, theme, toggleTheme } = useAuth();
   const location = useLocation();
   const [time, setTime] = useState(new Date());
@@ -48,9 +48,18 @@ export const Header: React.FC = () => {
 
   return (
     <header className="glass-card header-container">
-      <div className="header-title-section">
-        <h1>{getPageTitle()}</h1>
-        <p className="header-subtitle">Welcome back, {user.username}</p>
+      <div className="header-title-section" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button 
+          onClick={onToggleSidebar} 
+          className="sidebar-toggle-btn"
+          aria-label="Toggle Sidebar"
+        >
+          <Menu size={20} />
+        </button>
+        <div>
+          <h1>{getPageTitle()}</h1>
+          <p className="header-subtitle">Welcome back, {user.username}</p>
+        </div>
       </div>
 
       <div className="header-right-section" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -163,9 +172,65 @@ export const Header: React.FC = () => {
           border-color: rgba(0, 0, 0, 0.15);
         }
 
+        .sidebar-toggle-btn {
+          display: none;
+        }
+
+        @media (max-width: 1024px) {
+          .sidebar-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: var(--border-radius-sm);
+            background: rgba(255, 255, 255, 0.02) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            padding: 0 !important;
+          }
+          .sidebar-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.08) !important;
+            border-color: var(--glass-border-hover) !important;
+          }
+        }
+
+        :root[data-theme='light'] .sidebar-toggle-btn {
+          background: rgba(0, 0, 0, 0.02) !important;
+          border-color: rgba(0, 0, 0, 0.08) !important;
+        }
+
+        :root[data-theme='light'] .sidebar-toggle-btn:hover {
+          background: rgba(0, 0, 0, 0.05) !important;
+          border-color: rgba(0, 0, 0, 0.15) !important;
+        }
+
         @media (max-width: 768px) {
           .header-meta-section {
             display: none;
+          }
+        }
+
+        @media (max-width: 576px) {
+          .header-container {
+            padding: 0 16px;
+            height: 70px;
+          }
+          .header-title-section h1 {
+            font-size: 1.15rem;
+          }
+          .header-subtitle {
+            display: none;
+          }
+          .header-close-btn span {
+            display: none;
+          }
+          .header-close-btn {
+            padding: 8px !important;
+            width: 38px;
+            height: 38px;
           }
         }
       `}} />

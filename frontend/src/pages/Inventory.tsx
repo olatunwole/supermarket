@@ -1029,7 +1029,7 @@ export const Inventory: React.FC = () => {
       {loading ? (
         <div className="flex-center" style={{ minHeight: '30vh' }}><div className="spinner"></div></div>
       ) : (
-        <div className="table-responsive glass-card" style={{ overflow: 'hidden' }}>
+        <div className="table-responsive glass-card">
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>

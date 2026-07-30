@@ -222,7 +222,7 @@ export const Reports: React.FC = () => {
       
       {/* Top Header & Tabs Navigation */}
       <div className="reports-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div className="tabs-nav glass-card" style={{ display: 'flex', padding: '6px', gap: '4px', background: 'rgba(19, 26, 46, 0.4)' }}>
+        <div className="tabs-nav glass-card" style={{ display: 'flex', padding: '6px', gap: '4px', background: 'rgba(19, 26, 46, 0.4)', overflowX: 'auto', maxWidth: '100%' }}>
           <button 
             className={`tab-btn ${activeTab === 'sales' ? 'active' : ''}`}
             onClick={() => setActiveTab('sales')}
@@ -248,7 +248,7 @@ export const Reports: React.FC = () => {
 
         {/* Global Date & Grouping Filters (Not applicable for Valuation tab) */}
         {activeTab !== 'valuation' && (
-          <div className="filters-bar glass-card" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', background: 'rgba(19, 26, 46, 0.3)' }}>
+          <div className="filters-bar glass-card" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', background: 'rgba(19, 26, 46, 0.3)', flexWrap: 'wrap' }}>
             <div className="filter-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Calendar size={14} style={{ color: 'var(--text-secondary)' }} />
               <input 

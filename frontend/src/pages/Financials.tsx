@@ -1218,7 +1218,7 @@ export const Financials: React.FC = () => {
             </div>
 
             <form onSubmit={handlePostOtherTransaction}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="form-grid-2col" style={{ marginBottom: '16px' }}>
                 <div className="form-group">
                   <label className="form-label">Transaction Date</label>
                   <input
@@ -1253,7 +1253,7 @@ export const Financials: React.FC = () => {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="form-grid-2col" style={{ marginBottom: '16px' }}>
                 <div className="form-group">
                   <label className="form-label">Debit Account (Increase Assets / Expenses)</label>
                   <select
@@ -2251,7 +2251,7 @@ export const Financials: React.FC = () => {
             </div>
 
             <form onSubmit={handlePostJournalEntry}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="form-grid-2col" style={{ marginBottom: '16px' }}>
                 <div className="form-group">
                   <label className="form-label">Entry Date</label>
                   <input
@@ -2292,7 +2292,7 @@ export const Financials: React.FC = () => {
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
                   {newJeItems.map((item, index) => (
-                    <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div key={index} className="je-item-row">
                       
                       {/* Account selection */}
                       <select
@@ -2613,6 +2613,26 @@ export const Financials: React.FC = () => {
           background: rgba(6, 182, 212, 0.08) !important;
           border-top: 1.5px solid var(--accent-cyan) !important;
           border-bottom: 3px double var(--accent-cyan) !important; /* Excel totals underline */
+        }
+        
+        .je-item-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+        @media (max-width: 600px) {
+          .je-item-row {
+            flex-direction: column;
+            align-items: stretch;
+            padding: 12px;
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius-sm);
+            background: rgba(255, 255, 255, 0.01);
+          }
+          .je-item-row select, .je-item-row input {
+            width: 100% !important;
+            flex: none !important;
+          }
         }
       `}} />
 

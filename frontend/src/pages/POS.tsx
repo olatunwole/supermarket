@@ -448,17 +448,17 @@ export const POS: React.FC = () => {
   const { subtotal, taxAmt, finalTotal } = calculateTotals();
 
   return (
-    <div className="pos-layout" style={{ height: 'calc(100vh - 160px)', display: 'grid', gridTemplateColumns: '1fr 350px', gap: '20px', padding: '0', width: '100%', boxSizing: 'border-box' }}>
+    <div className="pos-layout">
       
       {/* Catalog & Search (Left side) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0 }}>
+      <div className="pos-catalog-container">
         
         {/* POS Sub-header actions */}
         <div className="flex-space" style={{ flexWrap: 'wrap', gap: '10px' }}>
           
           {/* Search & Camera Scan Row */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <div style={{ position: 'relative', width: '320px' }}>
+          <div className="pos-actions-bar">
+            <div className="pos-search-wrapper">
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-muted)' }} />
               <input
                 ref={searchInputRef}
@@ -558,7 +558,7 @@ export const POS: React.FC = () => {
       </div>
 
       {/* Cart & Checkout panel (Right side) */}
-      <div className="glass-card" style={{ padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div className="glass-card pos-cart-container">
         <h2 style={{ fontSize: '1.1rem', fontWeight: 700, borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ShoppingCart size={18} className="text-accent" /> Checkout Terminal Cart
         </h2>
@@ -835,6 +835,65 @@ export const POS: React.FC = () => {
 
       {/* Custom Styles */}
       <style dangerouslySetInnerHTML={{__html: `
+        .pos-layout {
+          height: calc(100vh - 160px);
+          display: grid;
+          grid-template-columns: 1fr 350px;
+          gap: 20px;
+          padding: 0;
+          width: 100%;
+          box-sizing: border-box;
+          min-height: 0;
+        }
+        .pos-catalog-container {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          min-height: 0;
+          height: 100%;
+        }
+        .pos-cart-container {
+          padding: 20px;
+          border-radius: 16px;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          min-height: 0;
+        }
+        .pos-actions-bar {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          width: 100%;
+          flex-wrap: wrap;
+        }
+        .pos-search-wrapper {
+          position: relative;
+          width: 320px;
+          flex-grow: 1;
+        }
+        @media (max-width: 1024px) {
+          .pos-layout {
+            grid-template-columns: 1fr;
+            height: auto;
+            min-height: 100%;
+            gap: 24px;
+          }
+          .pos-catalog-container {
+            height: 500px;
+          }
+          .pos-cart-container {
+            height: 600px;
+          }
+        }
+        @media (max-width: 640px) {
+          .pos-search-wrapper {
+            width: 100%;
+          }
+          .pos-actions-bar button {
+            flex: 1;
+          }
+        }
         .pos-prod-card:hover {
           border-color: var(--accent-cyan) !important;
           transform: translateY(-2px);
