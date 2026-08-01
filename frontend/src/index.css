@@ -275,6 +275,82 @@ button:hover {
 @media (max-width: 1024px) {
   .grid-cols-4 { grid-template-columns: repeat(2, 1fr); }
   .grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
+  
+  .main-content-viewport {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 16px 16px 24px 16px !important;
+  }
+
+  .sidebar-container {
+    transform: translateX(-100%) !important;
+    border-right: 1px solid var(--glass-border) !important;
+    border-top-right-radius: var(--border-radius-lg) !important;
+    border-bottom-right-radius: var(--border-radius-lg) !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar-container.open {
+    transform: translateX(0) !important;
+    box-shadow: var(--shadow-premium) !important;
+  }
+
+  .sidebar-close-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-secondary) !important;
+    cursor: pointer;
+    padding: 4px !important;
+    margin-left: auto;
+  }
+
+  .sidebar-close-btn:hover {
+    color: var(--text-primary) !important;
+  }
+
+  .sidebar-toggle-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-sm) !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: var(--text-primary) !important;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    padding: 0 !important;
+  }
+
+  .sidebar-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: var(--glass-border-hover) !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .header-container {
+    padding: 0 16px !important;
+    height: 70px !important;
+  }
+  .header-title-section h1 {
+    font-size: 1.15rem !important;
+  }
+  .header-subtitle {
+    display: none !important;
+  }
+  .header-close-btn span {
+    display: none !important;
+  }
+  .header-close-btn {
+    padding: 8px !important;
+    width: 38px !important;
+    height: 38px !important;
+  }
 }
 
 @media (max-width: 768px) {
@@ -545,6 +621,16 @@ table td *:not(.badge):not(.btn):not(button):not(svg):not(path),
 
 :root[data-theme='light'] .sidebar-footer {
   border-top-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+:root[data-theme='light'] .sidebar-toggle-btn {
+  background: rgba(0, 0, 0, 0.02) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+:root[data-theme='light'] .sidebar-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
 }
 
 /* Printable Barcode Label Styles */
