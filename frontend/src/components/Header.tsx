@@ -173,28 +173,22 @@ export const Header: React.FC<{ onToggleSidebar?: () => void }> = ({ onToggleSid
         }
 
         .sidebar-toggle-btn {
-          display: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: var(--border-radius-sm);
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid var(--glass-border);
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: var(--transition-smooth);
         }
 
-        @media (max-width: 1024px) {
-          .sidebar-toggle-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 40px;
-            border-radius: var(--border-radius-sm);
-            background: rgba(255, 255, 255, 0.02) !important;
-            border: 1px solid var(--glass-border) !important;
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: var(--transition-smooth);
-            padding: 0 !important;
-          }
-          .sidebar-toggle-btn:hover {
-            background: rgba(255, 255, 255, 0.08) !important;
-            border-color: var(--glass-border-hover) !important;
-          }
+        .sidebar-toggle-btn:hover {
+          background: rgba(255, 255, 255, 0.08);
+          border-color: var(--glass-border-hover);
         }
 
         :root[data-theme='light'] .sidebar-toggle-btn {

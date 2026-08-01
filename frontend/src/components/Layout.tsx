@@ -4,10 +4,10 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
 export const Layout: React.FC = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
 
   return (
-    <div className="app-layout-wrapper">
+    <div className={`app-layout-wrapper ${isSidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
       {isSidebarOpen && (
         <div className="sidebar-backdrop" onClick={() => setIsSidebarOpen(false)} />
       )}

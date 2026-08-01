@@ -90,6 +90,12 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
     }
   };
 
+  const handleLinkClick = () => {
+    if (window.innerWidth <= 1024) {
+      onClose?.();
+    }
+  };
+
   return (
     <aside className={`glass-card sidebar-container ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-brand">
@@ -125,7 +131,7 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
             key={link.to}
             to={link.to}
             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-            onClick={onClose}
+            onClick={handleLinkClick}
           >
             {link.icon}
             <span>{link.label}</span>
@@ -133,7 +139,7 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
         ))}
       </nav>
 
-      <button className="sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
+      <button className="sidebar-logout" onClick={() => { handleLinkClick(); logout(); }}>
         <LogOut size={20} />
         <span>Sign Out</span>
       </button>
