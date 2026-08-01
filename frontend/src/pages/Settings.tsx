@@ -33,6 +33,27 @@ export const Settings: React.FC = () => {
   const isAdmin = user?.role === 'admin';
   const [activeTab, setActiveTab] = useState<string>('profile');
 
+  // Activity Log State
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'activity-log' && isAdmin) {
+      const fetchLogs = async () => {
+        try {
+          setLogsLoading(true);
+          const data = await apiFetch('/api/audit-logs');
+          setAuditLogs(data);
+        } catch (err: any) {
+          showNotification(err.message || 'Failed to fetch activity logs', 'error');
+        } finally {
+          setLogsLoading(false);
+        }
+      };
+      fetchLogs();
+    }
+  }, [activeTab, isAdmin]);
+
   // Profile Change Password State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -134,6 +155,14 @@ export const Settings: React.FC = () => {
             >
               <Palette size={18} />
               <span>Color & Timeout</span>
+            </button>
+            <button 
+              className={`btn ${activeTab === 'activity-log' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ justifyContent: 'flex-start', textAlign: 'left', height: '44px', width: '100%', gap: '10px' }}
+              onClick={() => setActiveTab('activity-log')}
+            >
+              <Clock size={18} />
+              <span>Activity Log</span>
             </button>
           </>
         )}
@@ -538,6 +567,61 @@ export const Settings: React.FC = () => {
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'activity-log' && isAdmin && (
+          <div className="glass-card" style={{ padding: '24px' }}>
+            <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={20} className="text-cyan" />
+                <span>System Activity Log</span>
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Review real-time administrative actions, inventory modifications, and security events.
+              </p>
+            </div>
+
+            {logsLoading ? (
+              <div className="flex-center" style={{ minHeight: '200px' }}><div className="spinner"></div></div>
+            ) : auditLogs.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '40px' }}>No activity records found.</p>
+            ) : (
+              <div className="table-responsive">
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
+                      <th style={{ padding: '12px' }}>Timestamp</th>
+                      <th style={{ padding: '12px' }}>User</th>
+                      <th style={{ padding: '12px' }}>Action</th>
+                      <th style={{ padding: '12px' }}>Details</th>
+                      <th style={{ padding: '12px' }}>IP Address</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }} className="table-row">
+                        <td style={{ padding: '12px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                          {new Date(log.created_at).toLocaleString('en-GB')}
+                        </td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem' }}>
+                          <span className="badge badge-info">{log.username || 'System'}</span>
+                        </td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>
+                          {log.action}
+                        </td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                          {log.details}
+                        </td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                          {log.ip_address || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

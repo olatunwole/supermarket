@@ -434,6 +434,11 @@ button:hover {
     padding: 8px 10px !important;
     font-size: 0.8rem !important;
   }
+
+  .users-wrapper {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
 }
 
 @media (max-width: 640px) {

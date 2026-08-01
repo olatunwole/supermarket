@@ -31,6 +31,7 @@ interface Product {
   supplier_id: number | null;
   supplier_name?: string;
   expiry_date: string | null;
+  created_at: string;
 }
 
 interface Category {
@@ -87,6 +88,11 @@ export const Inventory: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [sortBy, setSortBy] = useState('name');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Bulk Selection
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -316,9 +322,45 @@ export const Inventory: React.FC = () => {
     try {
       await apiFetch(`/api/products/${id}`, { method: 'DELETE' });
       showNotification('Product deleted successfully', 'success');
+      setSelectedIds(prev => prev.filter(item => item !== id));
       fetchInitialData();
     } catch (err: any) {
       showNotification(err.message || 'Failed to delete product', 'error');
+    }
+  };
+
+  const handleToggleSelect = (id: number) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAll = () => {
+    if (filteredProducts.length === 0) return;
+    const allSelected = filteredProducts.every(p => selectedIds.includes(p.id));
+    if (allSelected) {
+      const visibleIds = filteredProducts.map(p => p.id);
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      const visibleIds = filteredProducts.map(p => p.id);
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete the ${selectedIds.length} selected products? This will also delete their transaction history.`)) return;
+
+    try {
+      await apiFetch('/api/products/bulk', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids: selectedIds })
+      });
+      showNotification(`${selectedIds.length} products deleted successfully`, 'success');
+      setSelectedIds([]);
+      fetchInitialData();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to bulk delete products', 'error');
     }
   };
 
@@ -665,7 +707,11 @@ export const Inventory: React.FC = () => {
                           (prod.barcode && prod.barcode.includes(search));
       const matchCategory = selectedCategory === '' || prod.category_id === parseInt(selectedCategory);
       const matchSupplier = selectedSupplier === '' || prod.supplier_id === parseInt(selectedSupplier);
-      return matchSearch && matchCategory && matchSupplier;
+      
+      const matchStartDate = !startDate || new Date(prod.created_at) >= new Date(startDate);
+      const matchEndDate = !endDate || new Date(prod.created_at) <= new Date(endDate + 'T23:59:59');
+      
+      return matchSearch && matchCategory && matchSupplier && matchStartDate && matchEndDate;
     })
     .sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
@@ -697,6 +743,12 @@ export const Inventory: React.FC = () => {
             style={{ display: 'none' }} 
             onChange={handleFileUpload} 
           />
+          {user?.role === 'admin' && selectedIds.length > 0 && (
+            <button className="btn btn-danger" onClick={handleBulkDelete}>
+              <Trash2 size={18} /> Delete Selected ({selectedIds.length})
+            </button>
+          )}
+
           <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={18} /> Bulk Import
           </button>
@@ -1007,6 +1059,28 @@ export const Inventory: React.FC = () => {
             <option value="">All Suppliers</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>From:</span>
+            <input 
+              type="date" 
+              className="form-input" 
+              style={{ width: '135px', margin: 0, height: '40px', padding: '8px' }}
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>To:</span>
+            <input 
+              type="date" 
+              className="form-input" 
+              style={{ width: '135px', margin: 0, height: '40px', padding: '8px' }}
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+            />
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1033,6 +1107,16 @@ export const Inventory: React.FC = () => {
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
+                {user?.role === 'admin' && (
+                  <th style={{ padding: '16px', width: '40px' }}>
+                    <input 
+                      type="checkbox"
+                      className="form-checkbox"
+                      checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedIds.includes(p.id))}
+                      onChange={handleToggleAll}
+                    />
+                  </th>
+                )}
                 <th style={{ padding: '16px' }}>Product Details</th>
                 <th style={{ padding: '16px' }}>SKU & Barcode</th>
                 <th style={{ padding: '16px' }}>Category</th>
@@ -1045,7 +1129,7 @@ export const Inventory: React.FC = () => {
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={user?.role === 'admin' ? 8 : 7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     No products found matching filters.
                   </td>
                 </tr>
@@ -1071,6 +1155,16 @@ export const Inventory: React.FC = () => {
                   const isExpired = expDate ? expDate < today : false;
                   return (
                     <tr key={prod.id} className="table-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      {user?.role === 'admin' && (
+                        <td style={{ padding: '16px' }}>
+                          <input 
+                            type="checkbox"
+                            className="form-checkbox"
+                            checked={selectedIds.includes(prod.id)}
+                            onChange={() => handleToggleSelect(prod.id)}
+                          />
+                        </td>
+                      )}
                       <td style={{ padding: '16px' }}>
                         <div style={{ fontWeight: 600 }}>{prod.name}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: #{prod.id}</div>

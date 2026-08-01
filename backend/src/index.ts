@@ -11,6 +11,7 @@ import salesRoutes from './routes/sales';
 import purchaseOrderRoutes from './routes/purchaseOrders';
 import reportRoutes from './routes/reports';
 import financialsRoutes from './routes/financials';
+import auditLogRoutes from './routes/auditLogs';
 import { errorHandler } from './middleware/errorHandler';
 import { autoInitDatabase } from './db/autoInit';
 
@@ -57,6 +58,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/financials', financialsRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

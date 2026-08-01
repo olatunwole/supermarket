@@ -291,3 +291,24 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
     client.release();
   }
 };
+
+export const deleteProductsBulk = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: 'ids must be a non-empty array' });
+    return;
+  }
+
+  try {
+    const result = await query(
+      'DELETE FROM products WHERE id = ANY($1::int[]) RETURNING id',
+      [ids]
+    );
+    const deletedCount = result.rows.length;
+    await logAudit(req, 'BULK_DELETE_PRODUCTS', `Bulk deleted ${deletedCount} products`);
+    res.json({ message: `${deletedCount} products deleted`, count: deletedCount });
+  } catch (err) {
+    console.error('Bulk delete products error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
