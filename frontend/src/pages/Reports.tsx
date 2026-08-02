@@ -71,7 +71,7 @@ interface InventoryValuationResponse {
 }
 
 export const Reports: React.FC = () => {
-  const { apiFetch, showNotification, formatCurrency, currency } = useAuth();
+  const { apiFetch, showNotification, formatCurrency, currency, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'sales' | 'performance' | 'valuation'>('sales');
   const [loading, setLoading] = useState(true);
 
@@ -291,6 +291,21 @@ export const Reports: React.FC = () => {
         <div className="loading-state">
           <div className="spinner" />
           <p>Compiling report details...</p>
+        </div>
+      ) : activeTab !== 'sales' && user?.subscription_plan !== 'Advanced' ? (
+        <div className="report-locked-container" style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '40vh', textAlign: 'center' }}>
+          <div className="glass-card" style={{ maxWidth: '500px', padding: '40px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-cyan-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-cyan)' }}>
+              <BarChart3 size={32} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Advanced Analytics is Locked</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+              Inventory Valuation reports and detailed Product Performance metric analytics are only available on the <strong>Advanced</strong> subscription plan level.
+            </p>
+            <div style={{ background: 'rgba(6, 182, 212, 0.05)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--accent-cyan-glow)', fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
+              Please contact your system Administrator to unlock the Advanced reporting tier.
+            </div>
+          </div>
         </div>
       ) : (
         <>

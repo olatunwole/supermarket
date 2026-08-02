@@ -11,6 +11,7 @@ import {
   getLowStockProducts 
 } from '../controllers/productController';
 import { authenticate, authorize } from '../middleware/auth';
+import { checkPlanLimit } from '../middleware/planLimits';
 
 const router = Router();
 router.use(authenticate);
@@ -18,8 +19,8 @@ router.get('/', getProducts);
 router.get('/low-stock', getLowStockProducts);
 router.get('/barcode/:code', getProductByBarcode);
 router.get('/:id', getProductById);
-router.post('/bulk', authorize('admin', 'manager'), bulkCreateProducts);
-router.post('/', authorize('admin', 'manager'), createProduct);
+router.post('/bulk', authorize('admin', 'manager'), checkPlanLimit('create_product'), bulkCreateProducts);
+router.post('/', authorize('admin', 'manager'), checkPlanLimit('create_product'), createProduct);
 router.put('/:id', authorize('admin', 'manager'), updateProduct);
 router.delete('/bulk', authorize('admin'), deleteProductsBulk);
 router.delete('/:id', authorize('admin'), deleteProduct);

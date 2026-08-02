@@ -113,7 +113,27 @@ interface CashflowResponse {
 }
 
 export const Financials: React.FC = () => {
-  const { apiFetch, showNotification, formatCurrency } = useAuth();
+  const { apiFetch, showNotification, formatCurrency, user } = useAuth();
+  
+  if (user?.subscription_plan === 'Starter') {
+    return (
+      <div className="financials-locked-container" style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', textAlign: 'center' }}>
+        <div className="glass-card" style={{ maxWidth: '500px', padding: '40px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-cyan-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-cyan)' }}>
+            <Landmark size={32} />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Financial Accounting is Locked</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+            Double-entry ledgers, automated journal entries posting, financial statements (Balance Sheet, Cash Flow, Trial Balance), and monthly closings are only available on the <strong>Pro</strong> or <strong>Advanced</strong> subscription plans.
+          </p>
+          <div style={{ background: 'rgba(6, 182, 212, 0.05)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--accent-cyan-glow)', fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
+            Please contact your system Administrator to scale up your subscription plan.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState<'overview' | 'staging' | 'post-other' | 'accounts' | 'trial' | 'operations' | 'position' | 'cashflow' | 'journal' | 'closings'>('overview');
   const [loading, setLoading] = useState<boolean>(true);
 

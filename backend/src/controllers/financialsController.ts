@@ -6,6 +6,7 @@ import { logAudit } from '../middleware/auditLog';
 // --- CHART OF ACCOUNTS (COA) ---
 
 export const getAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const sql = `
       SELECT
@@ -22,10 +23,11 @@ export const getAccounts = async (req: AuthRequest, res: Response): Promise<void
         END::NUMERIC as balance
       FROM financial_accounts fa
       LEFT JOIN journal_items ji ON fa.id = ji.account_id
+      WHERE fa.tenant_id = $1
       GROUP BY fa.id
       ORDER BY fa.code ASC
     `;
-    const result = await query(sql);
+    const result = await query(sql, [tenantId]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -34,6 +36,7 @@ export const getAccounts = async (req: AuthRequest, res: Response): Promise<void
 };
 
 export const createAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { code, name, type } = req.body;
   if (!code || !name || !type) {
     res.status(400).json({ error: 'code, name and type are required' });
@@ -46,15 +49,15 @@ export const createAccount = async (req: AuthRequest, res: Response): Promise<vo
 
   try {
     // Check if code exists
-    const codeCheck = await query('SELECT id FROM financial_accounts WHERE code = $1', [code]);
+    const codeCheck = await query('SELECT id FROM financial_accounts WHERE code = $1 AND tenant_id = $2', [code, tenantId]);
     if (codeCheck.rows.length > 0) {
       res.status(400).json({ error: `Account code ${code} is already in use` });
       return;
     }
 
     const result = await query(
-      `INSERT INTO financial_accounts (code, name, type, is_system) VALUES ($1, $2, $3, false) RETURNING *`,
-      [code, name, type]
+      `INSERT INTO financial_accounts (tenant_id, code, name, type, is_system) VALUES ($1, $2, $3, $4, false) RETURNING *`,
+      [tenantId, code, name, type]
     );
     await logAudit(req, 'CREATE_ACCOUNT', `Created account ${code} - ${name}`);
     res.status(201).json(result.rows[0]);
@@ -65,11 +68,12 @@ export const createAccount = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const updateAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { id } = req.params;
   const { name, type } = req.body;
 
   try {
-    const acc = await query('SELECT * FROM financial_accounts WHERE id = $1', [id]);
+    const acc = await query('SELECT * FROM financial_accounts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (acc.rows.length === 0) {
       res.status(404).json({ error: 'Account not found' });
       return;
@@ -81,8 +85,8 @@ export const updateAccount = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const result = await query(
-      `UPDATE financial_accounts SET name = COALESCE($1, name), type = COALESCE($2, type), updated_at = NOW() WHERE id = $3 RETURNING *`,
-      [name, type, id]
+      `UPDATE financial_accounts SET name = COALESCE($1, name), type = COALESCE($2, type), updated_at = NOW() WHERE id = $3 AND tenant_id = $4 RETURNING *`,
+      [name, type, id, tenantId]
     );
 
     await logAudit(req, 'UPDATE_ACCOUNT', `Updated account ID ${id}`);
@@ -94,10 +98,11 @@ export const updateAccount = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { id } = req.params;
 
   try {
-    const acc = await query('SELECT * FROM financial_accounts WHERE id = $1', [id]);
+    const acc = await query('SELECT * FROM financial_accounts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (acc.rows.length === 0) {
       res.status(404).json({ error: 'Account not found' });
       return;
@@ -109,13 +114,16 @@ export const deleteAccount = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     // Check if account has journal entries
-    const entriesCheck = await query('SELECT id FROM journal_items WHERE account_id = $1 LIMIT 1', [id]);
+    const entriesCheck = await query(
+      'SELECT ji.id FROM journal_items ji JOIN journal_entries je ON ji.journal_entry_id = je.id WHERE ji.account_id = $1 AND je.tenant_id = $2 LIMIT 1',
+      [id, tenantId]
+    );
     if (entriesCheck.rows.length > 0) {
       res.status(409).json({ error: 'Cannot delete account with existing transaction history. Clear transactions or keep it inactive.' });
       return;
     }
 
-    await query('DELETE FROM financial_accounts WHERE id = $1', [id]);
+    await query('DELETE FROM financial_accounts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     await logAudit(req, 'DELETE_ACCOUNT', `Deleted account ID ${id} (${acc.rows[0].code})`);
     res.json({ message: 'Account deleted successfully' });
   } catch (err) {
@@ -127,6 +135,7 @@ export const deleteAccount = async (req: AuthRequest, res: Response): Promise<vo
 // --- JOURNAL ENTRIES ---
 
 export const getJournalEntries = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const sql = `
       SELECT
@@ -151,11 +160,12 @@ export const getJournalEntries = async (req: AuthRequest, res: Response): Promis
       LEFT JOIN users u ON je.created_by = u.id
       LEFT JOIN journal_items ji ON je.id = ji.journal_entry_id
       LEFT JOIN financial_accounts fa ON ji.account_id = fa.id
+      WHERE je.tenant_id = $1
       GROUP BY je.id, u.username
       ORDER BY je.entry_date DESC, je.id DESC
       LIMIT 200
     `;
-    const result = await query(sql);
+    const result = await query(sql, [tenantId]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -164,6 +174,7 @@ export const getJournalEntries = async (req: AuthRequest, res: Response): Promis
 };
 
 export const createJournalEntry = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { entry_date, description, reference, items } = req.body;
 
   if (!description || !items || !Array.isArray(items) || items.length < 2) {
@@ -214,8 +225,8 @@ export const createJournalEntry = async (req: AuthRequest, res: Response): Promi
     // Validate date against closed periods
     const closedCheck = await client.query(
       `SELECT period_name FROM closed_periods 
-       WHERE $1 BETWEEN start_date AND end_date`,
-      [entryDate]
+       WHERE tenant_id = $2 AND $1 BETWEEN start_date AND end_date`,
+      [entryDate, tenantId]
     );
     if (closedCheck.rows.length > 0) {
       res.status(400).json({ error: `Cannot post journal entry: The transaction date falls within a closed financial period (${closedCheck.rows[0].period_name}).` });
@@ -223,9 +234,9 @@ export const createJournalEntry = async (req: AuthRequest, res: Response): Promi
     }
 
     const jeRes = await client.query(
-      `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [entryDate, description, ref, req.user?.id]
+      `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [tenantId, entryDate, description, ref, req.user?.id]
     );
     const jeId = jeRes.rows[0].id;
 
@@ -254,6 +265,7 @@ export const createJournalEntry = async (req: AuthRequest, res: Response): Promi
 // --- REPORT ENDPOINTS ---
 
 export const getTrialBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { from, to } = req.query;
   const fromDate = from ? new Date(from as string) : new Date('2020-01-01');
   const toDate = to ? new Date(to as string) : new Date();
@@ -290,11 +302,11 @@ export const getTrialBalance = async (req: AuthRequest, res: Response): Promise<
       FROM financial_accounts fa
       LEFT JOIN journal_items ji ON fa.id = ji.account_id
       LEFT JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE je.entry_date IS NULL OR (je.entry_date >= $1 AND je.entry_date <= $2)
+      WHERE fa.tenant_id = $3 AND (je.entry_date IS NULL OR (je.entry_date >= $1 AND je.entry_date <= $2))
       GROUP BY fa.id
       ORDER BY fa.code ASC
     `;
-    const result = await query(sql, [fromDate, toDate]);
+    const result = await query(sql, [fromDate, toDate, tenantId]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -303,6 +315,7 @@ export const getTrialBalance = async (req: AuthRequest, res: Response): Promise<
 };
 
 export const getStatementOfOperations = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { from, to } = req.query;
   const fromDate = from ? new Date(from as string) : new Date('2020-01-01');
   const toDate = to ? new Date(to as string) : new Date();
@@ -320,11 +333,11 @@ export const getStatementOfOperations = async (req: AuthRequest, res: Response):
       FROM financial_accounts fa
       JOIN journal_items ji ON fa.id = ji.account_id
       JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE fa.type IN ('revenue', 'expense') AND je.entry_date >= $1 AND je.entry_date <= $2
+      WHERE fa.tenant_id = $3 AND fa.type IN ('revenue', 'expense') AND je.entry_date >= $1 AND je.entry_date <= $2
       GROUP BY fa.id
       ORDER BY fa.code ASC
     `;
-    const result = await query(sql, [fromDate, toDate]);
+    const result = await query(sql, [fromDate, toDate, tenantId]);
     
     // Structure the income statement data
     const revenues = result.rows.filter(r => r.type === 'revenue');
@@ -360,6 +373,7 @@ export const getStatementOfOperations = async (req: AuthRequest, res: Response):
 };
 
 export const getStatementOfFinancialPosition = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { to } = req.query;
   const toDate = to ? new Date(to as string) : new Date();
 
@@ -378,11 +392,11 @@ export const getStatementOfFinancialPosition = async (req: AuthRequest, res: Res
       FROM financial_accounts fa
       LEFT JOIN journal_items ji ON fa.id = ji.account_id
       LEFT JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE fa.type IN ('asset', 'liability', 'equity') AND (je.entry_date IS NULL OR je.entry_date <= $1)
+      WHERE fa.tenant_id = $2 AND fa.type IN ('asset', 'liability', 'equity') AND (je.entry_date IS NULL OR je.entry_date <= $1)
       GROUP BY fa.id
       ORDER BY fa.code ASC
     `;
-    const result = await query(sql, [toDate]);
+    const result = await query(sql, [toDate, tenantId]);
 
     // 2. Compute Net Income up to date 'to' to dynamically add to Retained Earnings
     // Net Income = (Revenue Credit - Debit) - (Expense Debit - Credit)
@@ -400,9 +414,9 @@ export const getStatementOfFinancialPosition = async (req: AuthRequest, res: Res
       FROM financial_accounts fa
       JOIN journal_items ji ON fa.id = ji.account_id
       JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE fa.type IN ('revenue', 'expense') AND je.entry_date <= $1
+      WHERE fa.tenant_id = $2 AND fa.type IN ('revenue', 'expense') AND je.entry_date <= $1
     `;
-    const netIncomeRes = await query(netIncomeSql, [toDate]);
+    const netIncomeRes = await query(netIncomeSql, [toDate, tenantId]);
     const cumulativeNetIncome = Number(netIncomeRes.rows[0].net_income || 0);
 
     const assets = result.rows.filter(r => r.type === 'asset');
@@ -455,6 +469,7 @@ export const getStatementOfFinancialPosition = async (req: AuthRequest, res: Res
 };
 
 export const getStatementOfCashflow = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { from, to } = req.query;
   const fromDate = from ? new Date(from as string) : new Date('2020-01-01');
   const toDate = to ? new Date(to as string) : new Date();
@@ -463,7 +478,7 @@ export const getStatementOfCashflow = async (req: AuthRequest, res: Response): P
     // Direct Cash Flow calculation: inspect entries affecting Cash Account (1010)
     // and categorize them based on the offset accounts in the same journal entry.
     // First, find Cash Account ID
-    const cashAccRes = await query("SELECT id FROM financial_accounts WHERE code = '1010'");
+    const cashAccRes = await query("SELECT id FROM financial_accounts WHERE code = '1010' AND tenant_id = $1", [tenantId]);
     if (cashAccRes.rows.length === 0) {
       res.status(404).json({ error: 'Cash account not found' });
       return;
@@ -481,9 +496,9 @@ export const getStatementOfCashflow = async (req: AuthRequest, res: Response): P
         je.reference
       FROM journal_items ji
       JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE ji.account_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
+      WHERE ji.account_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3 AND je.tenant_id = $4
     `;
-    const cashItemsRes = await query(cashItemsSql, [cashAccountId, fromDate, toDate]);
+    const cashItemsRes = await query(cashItemsSql, [cashAccountId, fromDate, toDate, tenantId]);
 
     let cashFromSales = 0;
     let cashPaidToSuppliers = 0;
@@ -503,8 +518,8 @@ export const getStatementOfCashflow = async (req: AuthRequest, res: Response): P
         `SELECT ji.*, fa.code, fa.type, fa.name 
          FROM journal_items ji 
          JOIN financial_accounts fa ON ji.account_id = fa.id
-         WHERE ji.journal_entry_id = $1 AND ji.account_id != $2`,
-        [entryId, cashAccountId]
+         WHERE ji.journal_entry_id = $1 AND ji.account_id != $2 AND fa.tenant_id = $3`,
+        [entryId, cashAccountId, tenantId]
       );
 
       // Categorize based on offsets
@@ -565,13 +580,14 @@ export const getStatementOfCashflow = async (req: AuthRequest, res: Response): P
 
 // Get a single account's ledger transaction line details
 export const getAccountLedger = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { id } = req.params;
   const { from, to } = req.query;
   const fromDate = from ? new Date(from as string) : new Date('2020-01-01');
   const toDate = to ? new Date(to as string) : new Date();
 
   try {
-    const accountCheck = await query('SELECT * FROM financial_accounts WHERE id = $1', [id]);
+    const accountCheck = await query('SELECT * FROM financial_accounts WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (accountCheck.rows.length === 0) {
       res.status(404).json({ error: 'Account not found' });
       return;
@@ -590,10 +606,10 @@ export const getAccountLedger = async (req: AuthRequest, res: Response): Promise
         je.reference
       FROM journal_items ji
       JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE ji.account_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
+      WHERE ji.account_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3 AND je.tenant_id = $4
       ORDER BY je.entry_date ASC, je.id ASC
     `;
-    const result = await query(sql, [id, fromDate, toDate]);
+    const result = await query(sql, [id, fromDate, toDate, tenantId]);
 
     // Calculate running balance
     let runningBalance = 0;
@@ -627,6 +643,7 @@ export const getAccountLedger = async (req: AuthRequest, res: Response): Promise
 // --- STAGING TRANSACTIONS QUEUE ---
 
 export const getStagingTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     // 1. Get Unposted Sales
     const salesSql = `
@@ -636,13 +653,13 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
              'sale:' || s.id as reference
       FROM sales s
       LEFT JOIN users u ON s.cashier_id = u.id
-      WHERE NOT EXISTS (
-        SELECT 1 FROM journal_entries je WHERE je.reference = 'sale:' || s.id
+      WHERE s.tenant_id = $1 AND NOT EXISTS (
+        SELECT 1 FROM journal_entries je WHERE je.reference = 'sale:' || s.id AND je.tenant_id = $1
       ) AND NOT EXISTS (
-        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'sale:' || s.id
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'sale:' || s.id AND rt.tenant_id = $1
       )
     `;
-    const salesRes = await query(salesSql);
+    const salesRes = await query(salesSql, [tenantId]);
 
     // 2. Get Unposted Purchase Orders (Received status)
     const posSql = `
@@ -652,13 +669,13 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
              'po:' || po.id as reference
       FROM purchase_orders po
       LEFT JOIN suppliers sup ON po.supplier_id = sup.id
-      WHERE po.status = 'received' AND NOT EXISTS (
-        SELECT 1 FROM journal_entries je WHERE je.reference = 'po:' || po.id
+      WHERE po.tenant_id = $1 AND po.status = 'received' AND NOT EXISTS (
+        SELECT 1 FROM journal_entries je WHERE je.reference = 'po:' || po.id AND je.tenant_id = $1
       ) AND NOT EXISTS (
-        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'po:' || po.id
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'po:' || po.id AND rt.tenant_id = $1
       )
     `;
-    const posRes = await query(posSql);
+    const posRes = await query(posSql, [tenantId]);
 
     // 3. Get Unposted Stock Adjustments (excluding sale adjustments which are posted via Sales)
     const adjsSql = `
@@ -670,13 +687,13 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
       FROM stock_adjustments sa
       JOIN products p ON sa.product_id = p.id
       LEFT JOIN users u ON sa.user_id = u.id
-      WHERE sa.adjustment_type != 'sale' AND NOT EXISTS (
-        SELECT 1 FROM journal_entries je WHERE je.reference = 'adjustment:' || sa.id
+      WHERE sa.tenant_id = $1 AND sa.adjustment_type != 'sale' AND NOT EXISTS (
+        SELECT 1 FROM journal_entries je WHERE je.reference = 'adjustment:' || sa.id AND je.tenant_id = $1
       ) AND NOT EXISTS (
-        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'adjustment:' || sa.id
+        SELECT 1 FROM rejected_transactions rt WHERE rt.reference = 'adjustment:' || sa.id AND rt.tenant_id = $1
       )
     `;
-    const adjsRes = await query(adjsSql);
+    const adjsRes = await query(adjsSql, [tenantId]);
 
     // Combine all and sort by date descending
     const allStaging = [
@@ -695,6 +712,7 @@ export const getStagingTransactions = async (req: AuthRequest, res: Response): P
 // --- BATCH POST STAGED TRANSACTIONS ---
 
 export const postTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { transactions } = req.body; // Array of { type: 'sale'|'purchase'|'adjustment', id: number }
 
   if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
@@ -708,7 +726,8 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
 
     // Fetch accounts map
     const accRes = await client.query(
-      "SELECT code, id FROM financial_accounts WHERE code IN ('1010', '1030', '2010', '2020', '3010', '4010', '4020', '5010', '5020', '5040')"
+      "SELECT code, id FROM financial_accounts WHERE tenant_id = $1 AND code IN ('1010', '1030', '2010', '2020', '3010', '4010', '4020', '5010', '5020', '5040')",
+      [tenantId]
     );
     const accMap: Record<string, number> = {};
     for (const r of accRes.rows) accMap[r.code] = r.id;
@@ -721,17 +740,17 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
       if (type === 'sale') {
         const ref = `sale:${id}`;
         // Check if already posted
-        const check = await client.query('SELECT id FROM journal_entries WHERE reference = $1', [ref]);
+        const check = await client.query('SELECT id FROM journal_entries WHERE reference = $1 AND tenant_id = $2', [ref, tenantId]);
         if (check.rows.length > 0) continue;
 
         // Fetch Sale
-        const saleRes = await client.query('SELECT * FROM sales WHERE id = $1', [id]);
+        const saleRes = await client.query('SELECT * FROM sales WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
         if (saleRes.rows.length === 0) continue;
         const sale = saleRes.rows[0];
 
         // Validate closed period
         const txDate = sale.sale_date || sale.created_at;
-        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE tenant_id = $1 AND $2 BETWEEN start_date AND end_date', [tenantId, txDate]);
         if (closedCheck.rows.length > 0) {
           throw new Error(`Cannot post: Sale date falls within closed period ${closedCheck.rows[0].period_name}`);
         }
@@ -750,9 +769,9 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
 
         // Create Journal Entry
         const jeRes = await client.query(
-          `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [sale.sale_date || sale.created_at, `Automated entry for Sale #${sale.id}`, ref, req.user?.id]
+          `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [tenantId, sale.sale_date || sale.created_at, `Automated entry for Sale #${sale.id}`, ref, req.user?.id]
         );
         const jeId = jeRes.rows[0].id;
 
@@ -806,22 +825,22 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
         if (check.rows.length > 0) continue;
 
         // Fetch PO
-        const poRes = await client.query("SELECT * FROM purchase_orders WHERE id = $1 AND status = 'received'", [id]);
+        const poRes = await client.query("SELECT * FROM purchase_orders WHERE id = $1 AND status = 'received' AND tenant_id = $2", [id, tenantId]);
         if (poRes.rows.length === 0) continue;
         const po = poRes.rows[0];
 
         // Validate closed period
         const txDate = po.received_date || po.updated_at || po.created_at;
-        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE tenant_id = $1 AND $2 BETWEEN start_date AND end_date', [tenantId, txDate]);
         if (closedCheck.rows.length > 0) {
           throw new Error(`Cannot post: PO date falls within closed period ${closedCheck.rows[0].period_name}`);
         }
 
         // Create Journal Entry
         const jeRes = await client.query(
-          `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [po.received_date || po.updated_at || po.created_at, `Automated entry for Purchase Order #${po.id} Received`, ref, req.user?.id]
+          `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [tenantId, po.received_date || po.updated_at || po.created_at, `Automated entry for Purchase Order #${po.id} Received`, ref, req.user?.id]
         );
         const jeId = jeRes.rows[0].id;
         const totalAmount = Number(po.total_amount);
@@ -845,13 +864,13 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
         if (check.rows.length > 0) continue;
 
         // Fetch Stock Adjustment
-        const saRes = await client.query('SELECT * FROM stock_adjustments WHERE id = $1', [id]);
+        const saRes = await client.query('SELECT * FROM stock_adjustments WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
         if (saRes.rows.length === 0) continue;
         const sa = saRes.rows[0];
 
         // Validate closed period
         const txDate = sa.created_at;
-        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE $1 BETWEEN start_date AND end_date', [txDate]);
+        const closedCheck = await client.query('SELECT period_name FROM closed_periods WHERE tenant_id = $1 AND $2 BETWEEN start_date AND end_date', [tenantId, txDate]);
         if (closedCheck.rows.length > 0) {
           throw new Error(`Cannot post: Stock adjustment date falls within closed period ${closedCheck.rows[0].period_name}`);
         }
@@ -867,9 +886,9 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
 
         // Create Journal Entry
         const jeRes = await client.query(
-          `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [sa.created_at, `Automated entry for Stock Adjustment #${sa.id} (${sa.adjustment_type})`, ref, req.user?.id]
+          `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [tenantId, sa.created_at, `Automated entry for Stock Adjustment #${sa.id} (${sa.adjustment_type})`, ref, req.user?.id]
         );
         const jeId = jeRes.rows[0].id;
 
@@ -915,6 +934,7 @@ export const postTransactions = async (req: AuthRequest, res: Response): Promise
 // --- DIRECT GENERAL TRANSACTION POST ---
 
 export const postOtherTransaction = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { entry_date, description, reference, debit_account_id, credit_account_id, amount } = req.body;
 
   if (!description || !debit_account_id || !credit_account_id || !amount) {
@@ -938,9 +958,10 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
     await client.query('BEGIN');
 
     // Validate account existence
-    const accountsCheck = await client.query('SELECT id FROM financial_accounts WHERE id IN ($1, $2)', [
+    const accountsCheck = await client.query('SELECT id FROM financial_accounts WHERE id IN ($1, $2) AND tenant_id = $3', [
       debit_account_id,
-      credit_account_id
+      credit_account_id,
+      tenantId
     ]);
     if (accountsCheck.rows.length < 2) {
       res.status(404).json({ error: 'One or both selected accounts do not exist' });
@@ -954,8 +975,8 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
     // Validate date against closed periods
     const closedCheck = await client.query(
       `SELECT period_name FROM closed_periods 
-       WHERE $1 BETWEEN start_date AND end_date`,
-      [entryDate]
+       WHERE tenant_id = $2 AND $1 BETWEEN start_date AND end_date`,
+      [entryDate, tenantId]
     );
     if (closedCheck.rows.length > 0) {
       res.status(400).json({ error: `Cannot post transaction: The transaction date falls within a closed financial period (${closedCheck.rows[0].period_name}).` });
@@ -964,9 +985,9 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
     }
 
     const jeRes = await client.query(
-      `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [entryDate, description, ref, req.user?.id]
+      `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [tenantId, entryDate, description, ref, req.user?.id]
     );
     const jeId = jeRes.rows[0].id;
 
@@ -996,6 +1017,7 @@ export const postOtherTransaction = async (req: AuthRequest, res: Response): Pro
 
 // --- REJECT TRANSACTIONS ---
 export const rejectTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { transactions } = req.body; // Array of { reference: string }
   if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
     res.status(400).json({ error: 'transactions array is required' });
@@ -1009,9 +1031,9 @@ export const rejectTransactions = async (req: AuthRequest, res: Response): Promi
       const { reference } = tx;
       if (!reference) continue;
       await client.query(
-        `INSERT INTO rejected_transactions (reference, rejected_by)
-         VALUES ($1, $2) ON CONFLICT (reference) DO NOTHING`,
-        [reference, req.user?.id]
+        `INSERT INTO rejected_transactions (tenant_id, reference, rejected_by)
+         VALUES ($1, $2, $3) ON CONFLICT (tenant_id, reference) DO NOTHING`,
+        [tenantId, reference, req.user?.id]
       );
     }
     await client.query('COMMIT');
@@ -1028,13 +1050,16 @@ export const rejectTransactions = async (req: AuthRequest, res: Response): Promi
 
 // --- GET CLOSED PERIODS ---
 export const getClosedPeriods = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const result = await query(
       `SELECT cp.*, u.username as closed_by_username, je.description as je_description
        FROM closed_periods cp
        LEFT JOIN users u ON cp.closed_by = u.id
        LEFT JOIN journal_entries je ON cp.journal_entry_id = je.id
-       ORDER BY cp.end_date DESC`
+       WHERE cp.tenant_id = $1
+       ORDER BY cp.end_date DESC`,
+      [tenantId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1045,6 +1070,7 @@ export const getClosedPeriods = async (req: AuthRequest, res: Response): Promise
 
 // --- CLOSE PERIOD (MONTHLY/YEARLY) ---
 export const closePeriod = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { period_type, period_name } = req.body;
 
   if (!period_type || !['month', 'year'].includes(period_type)) {
@@ -1083,7 +1109,7 @@ export const closePeriod = async (req: AuthRequest, res: Response): Promise<void
 
   const client = await pool.connect();
   try {
-    const dupCheck = await client.query('SELECT id FROM closed_periods WHERE period_name = $1', [period_name]);
+    const dupCheck = await client.query('SELECT id FROM closed_periods WHERE period_name = $1 AND tenant_id = $2', [period_name, tenantId]);
     if (dupCheck.rows.length > 0) {
       res.status(400).json({ error: `Period ${period_name} is already closed` });
       return;
@@ -1099,11 +1125,11 @@ export const closePeriod = async (req: AuthRequest, res: Response): Promise<void
       FROM financial_accounts fa
       LEFT JOIN journal_items ji ON fa.id = ji.account_id
       LEFT JOIN journal_entries je ON ji.journal_entry_id = je.id
-      WHERE fa.type IN ('revenue', 'expense')
+      WHERE fa.tenant_id = $3 AND fa.type IN ('revenue', 'expense')
         AND je.entry_date BETWEEN $1 AND $2
       GROUP BY fa.id, fa.code, fa.name, fa.type
     `;
-    const balancesRes = await client.query(balancesQuery, [start_date, end_date]);
+    const balancesRes = await client.query(balancesQuery, [start_date, end_date, tenantId]);
 
     // Retained Earnings account check
     const reRes = await client.query("SELECT id FROM financial_accounts WHERE code = '3020'");
@@ -1161,9 +1187,9 @@ export const closePeriod = async (req: AuthRequest, res: Response): Promise<void
       }
 
       const jeRes = await client.query(
-        `INSERT INTO journal_entries (entry_date, description, reference, created_by)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [end_date, `Closing entry for period ${period_name}`, `close:${period_type}:${period_name}`, req.user?.id]
+        `INSERT INTO journal_entries (tenant_id, entry_date, description, reference, created_by)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [tenantId, end_date, `Closing entry for period ${period_name}`, `close:${period_type}:${period_name}`, req.user?.id]
       );
       jeId = jeRes.rows[0].id;
 
@@ -1177,9 +1203,9 @@ export const closePeriod = async (req: AuthRequest, res: Response): Promise<void
     }
 
     await client.query(
-      `INSERT INTO closed_periods (period_type, period_name, start_date, end_date, closed_by, journal_entry_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [period_type, period_name, start_date, end_date, req.user?.id, jeId]
+      `INSERT INTO closed_periods (tenant_id, period_type, period_name, start_date, end_date, closed_by, journal_entry_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [tenantId, period_type, period_name, start_date, end_date, req.user?.id, jeId]
     );
 
     await client.query('COMMIT');

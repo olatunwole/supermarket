@@ -4,7 +4,10 @@ export interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'manager' | 'cashier' | 'stock_clerk';
+  role: 'admin' | 'manager' | 'cashier' | 'stock_clerk' | 'super_admin';
+  tenant_id?: number;
+  tenant_name?: string;
+  subscription_plan?: 'Starter' | 'Pro' | 'Advanced';
 }
 
 export interface StoreSettings {
@@ -20,7 +23,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string, subdomain?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   apiFetch: <T = any>(url: string, options?: RequestInit) => Promise<T>;
   showNotification: (message: string, type: 'success' | 'error' | 'warning') => void;
@@ -305,13 +308,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, subdomain?: string) => {
     try {
       const apiBaseUrl = (import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '');
       const res = await fetch(`${apiBaseUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, subdomain: subdomain || 'default' }),
       });
       const data = await res.json();
       if (!res.ok) {

@@ -1,25 +1,26 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Store, Lock, User as UserIcon, AlertCircle } from 'lucide-react';
+import { Store, Lock, User as UserIcon, AlertCircle, Globe } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login, storeSettings } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [subdomain, setSubdomain] = useState('default');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      setError('Please enter both username and password.');
+    if (!username.trim() || !password.trim() || !subdomain.trim()) {
+      setError('Please enter username, password, and shop subdomain.');
       return;
     }
     setError(null);
     setSubmitting(true);
-    const res = await login(username, password);
+    const res = await login(username, password, subdomain);
     setSubmitting(false);
     if (res.success) {
       navigate('/', { replace: true });
@@ -51,6 +52,22 @@ export const Login: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
+          <div className="form-group">
+            <label className="form-label" htmlFor="subdomain">Shop Subdomain</label>
+            <div className="input-with-icon">
+              <Globe size={18} className="input-icon" />
+              <input
+                id="subdomain"
+                type="text"
+                className="form-input"
+                placeholder="e.g. default, merchant1"
+                value={subdomain}
+                onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label" htmlFor="username">Username</label>
             <div className="input-with-icon">
@@ -89,8 +106,13 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
+        <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9rem' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>New to POS? </span>
+          <Link to="/signup" style={{ color: 'var(--accent-cyan)', fontWeight: 600, textDecoration: 'none' }}>Register Business</Link>
+        </div>
+
         <div className="login-footer">
-          <p>Demo accounts:</p>
+          <p>Demo accounts (default shop):</p>
           <div className="demo-credentials">
             <span>admin / admin123</span>
             <span>cashier1 / cashier123</span>

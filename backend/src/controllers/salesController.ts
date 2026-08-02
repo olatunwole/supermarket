@@ -31,6 +31,7 @@ export const getPendingScansForSession = async (req: Request, res: Response): Pr
 };
 
 export const getSales = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     let sql = `
       SELECT s.*, u.username as cashier_name,
@@ -39,10 +40,11 @@ export const getSales = async (req: AuthRequest, res: Response): Promise<void> =
       LEFT JOIN users u ON s.cashier_id=u.id
       LEFT JOIN sale_items si ON s.id=si.sale_id
       LEFT JOIN products p ON si.product_id=p.id
+      WHERE s.tenant_id = $1
     `;
-    const params: any[] = [];
+    const params: any[] = [tenantId];
     if (req.user?.role === 'cashier') {
-      sql += ` WHERE s.cashier_id=$1`; params.push(req.user.id);
+      sql += ` AND s.cashier_id=$2`; params.push(req.user.id);
     }
     sql += ' GROUP BY s.id, u.username ORDER BY s.sale_date DESC';
     if (req.query.limit) { sql += ` LIMIT $${params.length+1}`; params.push(req.query.limit); }
@@ -52,9 +54,10 @@ export const getSales = async (req: AuthRequest, res: Response): Promise<void> =
 };
 
 export const getSaleById = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const sale = await query(`
-      SELECT s.*, u.username as cashier_name FROM sales s LEFT JOIN users u ON s.cashier_id=u.id WHERE s.id=$1`, [req.params.id]);
+      SELECT s.*, u.username as cashier_name FROM sales s LEFT JOIN users u ON s.cashier_id=u.id WHERE s.id=$1 AND s.tenant_id=$2`, [req.params.id, tenantId]);
     if (!sale.rows[0]) { res.status(404).json({ error: 'Sale not found' }); return; }
     if (req.user?.role === 'cashier' && sale.rows[0].cashier_id !== req.user.id) {
       res.status(403).json({ error: 'Forbidden' }); return;
@@ -66,6 +69,7 @@ export const getSaleById = async (req: AuthRequest, res: Response): Promise<void
 };
 
 export const createSale = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { items, payment_method, discount_amount, tax_rate, notes } = req.body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'items array is required' }); return;
@@ -82,7 +86,7 @@ export const createSale = async (req: AuthRequest, res: Response): Promise<void>
     let subtotal = 0;
     const enrichedItems: any[] = [];
     for (const item of items) {
-      const prod = await client.query('SELECT * FROM products WHERE id=$1 FOR UPDATE', [item.product_id]);
+      const prod = await client.query('SELECT * FROM products WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [item.product_id, tenantId]);
       if (!prod.rows[0]) { await client.query('ROLLBACK'); res.status(404).json({ error: `Product ${item.product_id} not found` }); return; }
       if (prod.rows[0].quantity_on_hand < item.quantity) {
         await client.query('ROLLBACK');
@@ -99,9 +103,9 @@ export const createSale = async (req: AuthRequest, res: Response): Promise<void>
 
     // Insert sale
     const sale = await client.query(
-      `INSERT INTO sales (cashier_id, total_amount, tax_amount, discount_amount, payment_method, notes)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.user?.id, totalAmount, taxAmount, discountAmt, payment_method, notes || null]
+      `INSERT INTO sales (tenant_id, cashier_id, total_amount, tax_amount, discount_amount, payment_method, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [tenantId, req.user?.id, totalAmount, taxAmount, discountAmt, payment_method, notes || null]
     );
     const saleId = sale.rows[0].id;
 
@@ -112,12 +116,12 @@ export const createSale = async (req: AuthRequest, res: Response): Promise<void>
         [saleId, item.product_id, item.quantity, item.unit_price, item.cost_price, item.discount || 0]
       );
       await client.query(
-        'UPDATE products SET quantity_on_hand=quantity_on_hand-$1, updated_at=NOW() WHERE id=$2',
-        [item.quantity, item.product_id]
+        'UPDATE products SET quantity_on_hand=quantity_on_hand-$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3',
+        [item.quantity, item.product_id, tenantId]
       );
       await client.query(
-        `INSERT INTO stock_adjustments (product_id, quantity_changed, adjustment_type, reason, user_id) VALUES ($1,$2,'sale',$3,$4)`,
-        [item.product_id, -item.quantity, `Sale #${saleId}`, req.user?.id]
+        `INSERT INTO stock_adjustments (tenant_id, product_id, quantity_changed, adjustment_type, reason, user_id) VALUES ($1,$2,$3,'sale',$4,$5)`,
+        [tenantId, item.product_id, -item.quantity, `Sale #${saleId}`, req.user?.id]
       );
     }
 

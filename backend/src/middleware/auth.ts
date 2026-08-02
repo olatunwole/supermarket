@@ -6,6 +6,8 @@ export interface AuthRequest extends Request {
     id: number;
     username: string;
     role: string;
+    tenant_id: number;
+    subscription_plan: string;
   };
 }
 

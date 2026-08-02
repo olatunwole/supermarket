@@ -13,7 +13,8 @@ import {
   BarChart3,
   Settings,
   Landmark,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ isOpen, onClose }) => {
@@ -26,7 +27,13 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
       to: '/',
       label: 'Dashboard',
       icon: <LayoutDashboard size={20} />,
-      roles: ['admin', 'manager', 'cashier', 'stock_clerk']
+      roles: ['admin', 'manager', 'cashier', 'stock_clerk', 'super_admin']
+    },
+    {
+      to: '/super-admin',
+      label: 'Super Admin',
+      icon: <Shield size={20} />,
+      roles: ['super_admin']
     },
     {
       to: '/pos',
@@ -83,6 +90,7 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
   const roleLabel = (role: string) => {
     switch (role) {
       case 'admin': return 'Administrator';
+      case 'super_admin': return 'Super Admin';
       case 'manager': return 'Manager';
       case 'cashier': return 'Cashier';
       case 'stock_clerk': return 'Stock Clerk';

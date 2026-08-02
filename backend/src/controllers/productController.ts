@@ -5,16 +5,17 @@ import { logAudit } from '../middleware/auditLog';
 
 export const getProducts = async (req: AuthRequest, res: Response): Promise<void> => {
   const { search, category_id, low_stock } = req.query;
+  const tenantId = req.user?.tenant_id;
   try {
     let sql = `
       SELECT p.*, c.name as category_name, s.name as supplier_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN suppliers s ON p.supplier_id = s.id
-      WHERE 1=1
+      WHERE p.tenant_id = $1
     `;
-    const params: any[] = [];
-    let i = 1;
+    const params: any[] = [tenantId];
+    let i = 2;
     if (search) { sql += ` AND (p.name ILIKE $${i} OR p.sku ILIKE $${i} OR p.barcode ILIKE $${i})`; params.push(`%${search}%`); i++; }
     if (category_id) { sql += ` AND p.category_id = $${i}`; params.push(category_id); i++; }
     if (low_stock === 'true') { sql += ` AND p.quantity_on_hand <= p.reorder_threshold`; }
@@ -25,14 +26,15 @@ export const getProducts = async (req: AuthRequest, res: Response): Promise<void
 };
 
 export const getProductById = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const result = await query(
       `SELECT p.*, c.name as category_name, s.name as supplier_name
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN suppliers s ON p.supplier_id = s.id
-       WHERE p.id = $1`,
-      [req.params.id]
+       WHERE p.id = $1 AND p.tenant_id = $2`,
+      [req.params.id, tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Product not found' }); return; }
     res.json(result.rows[0]);
@@ -40,10 +42,14 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
 };
 
 export const getProductByBarcode = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const result = await query(
-      `SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id=c.id WHERE p.barcode=$1 OR p.sku=$1`,
-      [req.params.code]
+      `SELECT p.*, c.name as category_name 
+       FROM products p 
+       LEFT JOIN categories c ON p.category_id=c.id 
+       WHERE (p.barcode=$1 OR p.sku=$1) AND p.tenant_id=$2`,
+      [req.params.code, tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Product not found' }); return; }
     res.json(result.rows[0]);
@@ -51,6 +57,7 @@ export const getProductByBarcode = async (req: AuthRequest, res: Response): Prom
 };
 
 export const createProduct = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date } = req.body;
   if (!name || unit_price == null || cost_price == null || reorder_threshold == null || !expiry_date) {
     res.status(400).json({ error: 'name, unit_price, cost_price, reorder_threshold and expiry_date are required' }); return;
@@ -64,7 +71,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       while (!isUnique && attempts < 100) {
         const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
         const tempBarcode = prefix + randomPart;
-        const checkResult = await query('SELECT id FROM products WHERE barcode = $1 OR sku = $1', [tempBarcode]);
+        const checkResult = await query('SELECT id FROM products WHERE (barcode = $1 OR sku = $1) AND tenant_id = $2', [tempBarcode, tenantId]);
         if (checkResult.rows.length === 0) {
           finalBarcode = tempBarcode;
           isUnique = true;
@@ -79,9 +86,9 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const result = await query(
-      `INSERT INTO products (name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [name, finalSku, finalBarcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
+      `INSERT INTO products (tenant_id, name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [tenantId, name, finalSku, finalBarcode||null, category_id||null, unit_price, cost_price, quantity_on_hand||0, reorder_threshold||10, supplier_id||null, expiry_date||null]
     );
     await logAudit(req, 'CREATE_PRODUCT', `Created product ${name} (${finalSku})`);
     res.status(201).json(result.rows[0]);
@@ -92,6 +99,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const updateProduct = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { id } = req.params;
   const { name, barcode, category_id, unit_price, cost_price, reorder_threshold, supplier_id, expiry_date } = req.body;
   try {
@@ -101,8 +109,8 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
         unit_price=COALESCE($4,unit_price), cost_price=COALESCE($5,cost_price),
         reorder_threshold=COALESCE($6,reorder_threshold), supplier_id=COALESCE($7,supplier_id),
         expiry_date=COALESCE($8,expiry_date), updated_at=NOW()
-       WHERE id=$9 RETURNING *`,
-      [name, barcode, category_id, unit_price, cost_price, reorder_threshold, supplier_id, expiry_date, id]
+       WHERE id=$9 AND tenant_id=$10 RETURNING *`,
+      [name, barcode, category_id, unit_price, cost_price, reorder_threshold, supplier_id, expiry_date, id, tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Product not found' }); return; }
     await logAudit(req, 'UPDATE_PRODUCT', `Updated product id=${id}`);
@@ -111,26 +119,33 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const deleteProduct = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
-    const result = await query('DELETE FROM products WHERE id=$1 RETURNING id', [req.params.id]);
+    const result = await query('DELETE FROM products WHERE id=$1 AND tenant_id=$2 RETURNING id', [req.params.id, tenantId]);
     if (!result.rows[0]) { res.status(404).json({ error: 'Product not found' }); return; }
     await logAudit(req, 'DELETE_PRODUCT', `Deleted product id=${req.params.id}`);
     res.json({ message: 'Product deleted' });
   } catch { res.status(500).json({ error: 'Server error' }); }
 };
 
-export const getLowStockProducts = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getLowStockProducts = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   try {
     const result = await query(
       `SELECT p.*, c.name as category_name, s.name as supplier_name
-       FROM products p LEFT JOIN categories c ON p.category_id=c.id LEFT JOIN suppliers s ON p.supplier_id=s.id
-       WHERE p.quantity_on_hand <= p.reorder_threshold ORDER BY p.quantity_on_hand ASC`
+       FROM products p 
+       LEFT JOIN categories c ON p.category_id=c.id 
+       LEFT JOIN suppliers s ON p.supplier_id=s.id
+       WHERE p.quantity_on_hand <= p.reorder_threshold AND p.tenant_id=$1
+       ORDER BY p.quantity_on_hand ASC`,
+      [tenantId]
     );
     res.json(result.rows);
   } catch { res.status(500).json({ error: 'Server error' }); }
 };
 
 export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const productsList = req.body;
   if (!Array.isArray(productsList)) {
     res.status(400).json({ error: 'Body must be an array of products' });
@@ -142,12 +157,12 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
     await client.query('BEGIN');
 
     // 1. Fetch categories and suppliers to map name -> id
-    const categoriesRes = await client.query('SELECT id, name FROM categories');
+    const categoriesRes = await client.query('SELECT id, name FROM categories WHERE tenant_id = $1', [tenantId]);
     const categoryMap = new Map<string, number>(
       categoriesRes.rows.map((c: any) => [c.name.toLowerCase().trim(), c.id])
     );
 
-    const suppliersRes = await client.query('SELECT id, name FROM suppliers');
+    const suppliersRes = await client.query('SELECT id, name FROM suppliers WHERE tenant_id = $1', [tenantId]);
     const supplierMap = new Map<string, number>(
       suppliersRes.rows.map((s: any) => [s.name.toLowerCase().trim(), s.id])
     );
@@ -173,7 +188,7 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
       let finalSku = sku ? String(sku).trim() : '';
       let finalBarcode = barcode ? String(barcode).trim() : '';
 
-      // 1. Resolve barcode (generate one if missing, just like single creation)
+      // Resolve barcode
       if (!finalBarcode) {
         const prefix = '200';
         let isUnique = false;
@@ -182,7 +197,7 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
           const randomPart = Math.floor(100000000 + Math.random() * 900000000).toString();
           const tempBarcode = prefix + randomPart;
           
-          const checkResult = await client.query('SELECT id FROM products WHERE barcode = $1 OR sku = $1', [tempBarcode]);
+          const checkResult = await client.query('SELECT id FROM products WHERE (barcode = $1 OR sku = $1) AND tenant_id = $2', [tempBarcode, tenantId]);
           if (checkResult.rows.length === 0 && !generatedBarcodes.has(tempBarcode) && !generatedSkus.has(tempBarcode)) {
             finalBarcode = tempBarcode;
             generatedBarcodes.add(tempBarcode);
@@ -192,12 +207,11 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
         }
       }
 
-      // 2. If SKU is missing, link it to the barcode
+      // If SKU is missing, link it to the barcode
       if (!finalSku) {
         finalSku = finalBarcode;
       }
 
-      // Record the SKU to prevent any duplicates in this batch
       generatedSkus.add(finalSku);
 
       if (!name || !finalSku || unit_price == null || cost_price == null || reorder_threshold == null || !expiry_date) {
@@ -213,8 +227,8 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
           categoryId = categoryMap.get(catKey)!;
         } else {
           const newCat = await client.query(
-            'INSERT INTO categories (name, description) VALUES ($1, $2) RETURNING id',
-            [catName, 'Imported category']
+            'INSERT INTO categories (tenant_id, name, description) VALUES ($1, $2, $3) RETURNING id',
+            [tenantId, catName, 'Imported category']
           );
           categoryId = newCat.rows[0].id;
           categoryMap.set(catKey, categoryId!);
@@ -230,8 +244,8 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
           supplierId = supplierMap.get(supKey)!;
         } else {
           const newSup = await client.query(
-            'INSERT INTO suppliers (name) VALUES ($1) RETURNING id',
-            [supName]
+            'INSERT INTO suppliers (tenant_id, name) VALUES ($1, $2) RETURNING id',
+            [tenantId, supName]
           );
           supplierId = newSup.rows[0].id;
           supplierMap.set(supKey, supplierId!);
@@ -240,9 +254,9 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
 
       // Upsert product
       const upsertRes = await client.query(
-        `INSERT INTO products (name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (sku) DO UPDATE SET
+        `INSERT INTO products (tenant_id, name, sku, barcode, category_id, unit_price, cost_price, quantity_on_hand, reorder_threshold, supplier_id, expiry_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (tenant_id, sku) DO UPDATE SET
            name = EXCLUDED.name,
            barcode = COALESCE(EXCLUDED.barcode, products.barcode),
            category_id = COALESCE(EXCLUDED.category_id, products.category_id),
@@ -255,6 +269,7 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
            updated_at = NOW()
          RETURNING *`,
         [
+          tenantId,
           name,
           finalSku,
           finalBarcode || null,
@@ -271,9 +286,9 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
       // Create stock adjustment log if inserting stock
       if (quantity_on_hand > 0) {
         await client.query(
-          `INSERT INTO stock_adjustments (product_id, quantity_changed, adjustment_type, reason, user_id)
-           VALUES ($1, $2, 'receiving', 'Bulk Inventory Excel Upload', $3)`,
-          [upsertRes.rows[0].id, quantity_on_hand, req.user?.id]
+          `INSERT INTO stock_adjustments (tenant_id, product_id, quantity_changed, adjustment_type, reason, user_id)
+           VALUES ($1, $2, $3, 'receiving', 'Bulk Inventory Excel Upload', $4)`,
+          [tenantId, upsertRes.rows[0].id, quantity_on_hand, req.user?.id]
         );
       }
 
@@ -293,6 +308,7 @@ export const bulkCreateProducts = async (req: AuthRequest, res: Response): Promi
 };
 
 export const deleteProductsBulk = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = req.user?.tenant_id;
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     res.status(400).json({ error: 'ids must be a non-empty array' });
@@ -301,8 +317,8 @@ export const deleteProductsBulk = async (req: AuthRequest, res: Response): Promi
 
   try {
     const result = await query(
-      'DELETE FROM products WHERE id = ANY($1::int[]) RETURNING id',
-      [ids]
+      'DELETE FROM products WHERE id = ANY($1::int[]) AND tenant_id = $2 RETURNING id',
+      [ids, tenantId]
     );
     const deletedCount = result.rows.length;
     await logAudit(req, 'BULK_DELETE_PRODUCTS', `Bulk deleted ${deletedCount} products`);

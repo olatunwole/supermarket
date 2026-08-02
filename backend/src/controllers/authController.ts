@@ -6,15 +6,22 @@ import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../middleware/auditLog';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body;
+  const { username, password, subdomain } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
     return;
   }
   try {
+    const tenantRes = await query('SELECT * FROM tenants WHERE subdomain = $1', [subdomain || 'default']);
+    const tenant = tenantRes.rows[0];
+    if (!tenant) {
+      res.status(404).json({ error: 'Tenant not found' });
+      return;
+    }
+
     const result = await query(
-      'SELECT * FROM users WHERE username = $1 AND is_active = true',
-      [username]
+      'SELECT * FROM users WHERE username = $1 AND tenant_id = $2 AND is_active = true',
+      [username, tenant.id]
     );
     const user = result.rows[0];
     if (!user) {
@@ -27,13 +34,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
+      { id: user.id, username: user.username, role: user.role, tenant_id: user.tenant_id, subscription_plan: tenant.subscription_plan },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: (process.env.JWT_EXPIRES_IN || '8h') as any }
     );
     res.json({
       token,
-      user: { id: user.id, username: user.username, email: user.email, role: user.role },
+      user: { id: user.id, username: user.username, email: user.email, role: user.role, tenant_id: user.tenant_id, tenant_name: tenant.name, subscription_plan: tenant.subscription_plan },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error', stack: err.stack });
@@ -43,7 +50,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await query(
-      'SELECT id, username, email, role, is_active, created_at FROM users WHERE id = $1',
+      `SELECT u.id, u.username, u.email, u.role, u.is_active, u.created_at, u.tenant_id, t.name as tenant_name, t.subscription_plan
+       FROM users u
+       LEFT JOIN tenants t ON u.tenant_id = t.id
+       WHERE u.id = $1`,
       [req.user?.id]
     );
     if (!result.rows[0]) {

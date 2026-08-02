@@ -12,6 +12,8 @@ import purchaseOrderRoutes from './routes/purchaseOrders';
 import reportRoutes from './routes/reports';
 import financialsRoutes from './routes/financials';
 import auditLogRoutes from './routes/auditLogs';
+import tenantRoutes from './routes/tenants';
+import storefrontRoutes from './routes/storefront';
 import { errorHandler } from './middleware/errorHandler';
 import { autoInitDatabase } from './db/autoInit';
 
@@ -59,6 +61,8 @@ app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/financials', financialsRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/tenants', tenantRoutes);
+app.use('/api/storefront', storefrontRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

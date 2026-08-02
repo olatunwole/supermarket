@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { checkPlanLimit } from '../middleware/planLimits';
 import {
   getAccounts,
   createAccount,
@@ -25,6 +26,7 @@ const router = Router();
 // Apply auth middleware to all financials endpoints
 router.use(authenticate);
 router.use(authorize('admin', 'manager', 'stock_clerk'));
+router.use(checkPlanLimit('accounting'));
 
 // Chart of accounts CRUD
 router.get('/accounts', getAccounts);

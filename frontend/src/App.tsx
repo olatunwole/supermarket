@@ -14,6 +14,9 @@ import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Financials } from './pages/Financials';
 import { ScanCompanion } from './pages/ScanCompanion';
+import { Signup } from './pages/Signup';
+import { Storefront } from './pages/Storefront';
+import { SuperAdmin } from './pages/SuperAdmin';
 
 function App() {
   return (
@@ -22,6 +25,8 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/store/:subdomain" element={<Storefront />} />
           <Route path="/scan-companion" element={<ScanCompanion />} />
 
           {/* Protected Layout Routes */}
@@ -63,6 +68,11 @@ function App() {
               {/* Staff Accounts Management Access (Admins only) */}
               <Route path="/users" element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route index element={<Users />} />
+              </Route>
+              
+              {/* Super Admin Access */}
+              <Route path="/super-admin" element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+                <Route index element={<SuperAdmin />} />
               </Route>
 
               {/* Settings Configuration Access (All logged-in staff users) */}
