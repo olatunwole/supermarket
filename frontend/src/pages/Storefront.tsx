@@ -176,6 +176,11 @@ export const Storefront: React.FC = () => {
             </div>
           </div>
         </div>
+        <div>
+          <a href={`/login?subdomain=${tenant.subdomain}`} className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', padding: '8px 16px' }}>
+            <Shield size={16} /> Staff Portal
+          </a>
+        </div>
       </header>
 
       {/* Main Grid */}

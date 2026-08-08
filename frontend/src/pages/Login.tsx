@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Store, Lock, User as UserIcon, AlertCircle, Globe } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login, storeSettings } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const querySubdomain = searchParams.get('subdomain');
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [subdomain, setSubdomain] = useState('default');
+  const [subdomain, setSubdomain] = useState(querySubdomain || 'default');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Sync state if queryParam loads asynchronously or changes
+  useEffect(() => {
+    if (querySubdomain) {
+      setSubdomain(querySubdomain);
+    }
+  }, [querySubdomain]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
