@@ -5,9 +5,14 @@ import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../middleware/auditLog';
 
 export const signupTenant = async (req: Request, res: Response): Promise<void> => {
-  const { businessName, subdomain, email, password, plan } = req.body;
+  const { name, subdomain, admin_email, admin_password, subscription_plan } = req.body;
+  const businessName = name;
+  const email = admin_email;
+  const password = admin_password;
+  const plan = subscription_plan;
+
   if (!businessName || !subdomain || !email || !password) {
-    res.status(400).json({ error: 'Business name, subdomain, email, and password are required' });
+    res.status(400).json({ error: 'Business name, subdomain, admin email, and admin password are required' });
     return;
   }
 
@@ -25,11 +30,11 @@ export const signupTenant = async (req: Request, res: Response): Promise<void> =
 
     await client.query('BEGIN');
 
-    // 2. Create Tenant
+    // 2. Create Tenant (defaults to unpaid status)
     const tenantRes = await client.query(
       `INSERT INTO tenants (name, subdomain, subscription_plan, subscription_status)
-       VALUES ($1, $2, $3, 'active') RETURNING *`,
-      [businessName, cleanSubdomain, plan || 'starter']
+       VALUES ($1, $2, $3, 'unpaid') RETURNING *`,
+      [businessName, cleanSubdomain, plan || 'Pro']
     );
     const tenant = tenantRes.rows[0];
 

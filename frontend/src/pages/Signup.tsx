@@ -17,6 +17,16 @@ export const Signup: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const handleNameChange = (val: string) => {
+    setName(val);
+    const slug = val
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+    setSubdomain(slug);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !subdomain.trim() || !adminUsername.trim() || !adminEmail.trim() || !adminPassword.trim()) {
@@ -76,7 +86,7 @@ export const Signup: React.FC = () => {
                   className="form-input"
                   placeholder="e.g. London Supermarket"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
                   disabled={submitting}
                   required
                 />
@@ -98,7 +108,7 @@ export const Signup: React.FC = () => {
                   required
                 />
               </div>
-              <small className="help-text">Your store URL will be: pos-system.com/{subdomain || 'subdomain'}</small>
+              <small className="help-text">Your store URL will be: {window.location.host}/{subdomain || 'subdomain'}</small>
             </div>
           </div>
 
