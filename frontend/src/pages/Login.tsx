@@ -1,26 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Store, Lock, User as UserIcon, AlertCircle, Globe } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login, storeSettings } = useAuth();
   const navigate = useNavigate();
+  const { subdomain: pathSubdomain } = useParams<{ subdomain?: string }>();
   const [searchParams] = useSearchParams();
   const querySubdomain = searchParams.get('subdomain');
+  const activeSubdomain = pathSubdomain || querySubdomain;
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [subdomain, setSubdomain] = useState(querySubdomain || 'default');
+  const [subdomain, setSubdomain] = useState(activeSubdomain || 'default');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync state if queryParam loads asynchronously or changes
+  // Sync state if queryParam/pathParam loads or changes
   useEffect(() => {
-    if (querySubdomain) {
-      setSubdomain(querySubdomain);
+    if (activeSubdomain) {
+      setSubdomain(activeSubdomain);
     }
-  }, [querySubdomain]);
+  }, [activeSubdomain]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,21 +64,23 @@ export const Login: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
-          <div className="form-group">
-            <label className="form-label" htmlFor="subdomain">Shop Subdomain</label>
-            <div className="input-with-icon">
-              <Globe size={18} className="input-icon" />
-              <input
-                id="subdomain"
-                type="text"
-                className="form-input"
-                placeholder="e.g. default, merchant1"
-                value={subdomain}
-                onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                disabled={submitting}
-              />
+          {!activeSubdomain && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="subdomain">Shop Subdomain</label>
+              <div className="input-with-icon">
+                <Globe size={18} className="input-icon" />
+                <input
+                  id="subdomain"
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. default, merchant1"
+                  value={subdomain}
+                  onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  disabled={submitting}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="form-group">
             <label className="form-label" htmlFor="username">Username</label>

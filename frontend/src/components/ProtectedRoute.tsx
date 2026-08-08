@@ -64,6 +64,17 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     return <Navigate to="/super-admin" replace />;
   }
 
+  // Enforce pricing plan feature routing locks
+  if (user.role !== 'super_admin') {
+    const plan = user.subscription_plan || 'Pro';
+    if (location.pathname.startsWith('/financials') && plan === 'Starter') {
+      return <Navigate to="/" replace />;
+    }
+    if (location.pathname.startsWith('/reports') && (plan === 'Starter' || plan === 'Pro')) {
+      return <Navigate to="/" replace />;
+    }
+  }
+
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
       <div style={{

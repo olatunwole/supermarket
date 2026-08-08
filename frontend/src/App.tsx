@@ -27,6 +27,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/:subdomain/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/super-admin/login" element={<SuperAdminLogin />} />
           <Route path="/scan-companion" element={<ScanCompanion />} />

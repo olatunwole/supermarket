@@ -118,7 +118,21 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
     }
   ];
 
-  const filteredLinks = links.filter(link => link.roles.includes(user.role));
+  const filteredLinks = links.filter(link => {
+    if (!link.roles.includes(user.role)) return false;
+    
+    // Check subscription plan limits in UI
+    if (user.role !== 'super_admin') {
+      const plan = user.subscription_plan || 'Pro';
+      if (link.to === '/financials' && plan === 'Starter') {
+        return false;
+      }
+      if (link.to === '/reports' && (plan === 'Starter' || plan === 'Pro')) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   const roleLabel = (role: string) => {
     switch (role) {
