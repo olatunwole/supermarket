@@ -98,7 +98,7 @@ export const Signup: React.FC = () => {
                   required
                 />
               </div>
-              <small className="help-text">Your store url will be: {subdomain || 'subdomain'}.pos-system.com</small>
+              <small className="help-text">Your store URL will be: pos-system.com/{subdomain || 'subdomain'}</small>
             </div>
           </div>
 

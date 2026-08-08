@@ -18,6 +18,7 @@ import { Signup } from './pages/Signup';
 import { Storefront } from './pages/Storefront';
 import { SuperAdmin } from './pages/SuperAdmin';
 import { Payment } from './pages/Payment';
+import { SuperAdminLogin } from './pages/SuperAdminLogin';
 
 function App() {
   return (
@@ -27,7 +28,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/store/:subdomain" element={<Storefront />} />
+          <Route path="/super-admin/login" element={<SuperAdminLogin />} />
           <Route path="/scan-companion" element={<ScanCompanion />} />
 
           {/* Protected Routes */}
@@ -84,6 +85,9 @@ function App() {
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>
+
+          {/* Suffix/Path-based Storefront Catalog Router */}
+          <Route path="/:subdomain" element={<Storefront />} />
 
           {/* Wildcard Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
