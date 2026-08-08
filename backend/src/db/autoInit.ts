@@ -416,6 +416,19 @@ export const autoInitDatabase = async () => {
     }
     console.log('[AutoInit] Chart of Accounts seeded for all tenants.');
 
+    // Ensure superadmin user is seeded for tenant 1
+    const superadminRes = await client.query("SELECT id FROM users WHERE tenant_id = 1 AND username = 'superadmin'");
+    if (superadminRes.rows.length === 0) {
+      console.log('[AutoInit] Seeding missing superadmin user for Tenant 1...');
+      const hash = await bcrypt.hash('superadmin123', 10);
+      await client.query(
+        `INSERT INTO users (tenant_id, username, email, password_hash, role)
+         VALUES (1, 'superadmin', 'super@supermarket.com', $1, 'super_admin')`,
+        [hash]
+      );
+      console.log('[AutoInit] superadmin user seeded successfully.');
+    }
+
     // 6. Check if database is empty (no users seeded for tenant 1)
     const userCountRes = await client.query('SELECT COUNT(*)::integer FROM users WHERE tenant_id = 1');
     const userCount = userCountRes.rows[0].count;
