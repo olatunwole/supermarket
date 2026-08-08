@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signupTenant, getTenants, updateTenantSubscription } from '../controllers/tenantController';
+import { signupTenant, getTenants, updateTenantSubscription, deleteTenant } from '../controllers/tenantController';
 import { 
   getPlans, 
   updatePlan, 
@@ -38,5 +38,6 @@ router.post('/impersonate/:userId', authenticate, authorize('super_admin'), impe
 // Super admin dashboard tenant management
 router.get('/', authenticate, authorize('super_admin'), getTenants);
 router.put('/:id', authenticate, authorize('super_admin'), updateTenantSubscription);
+router.delete('/:id', authenticate, authorize('super_admin'), deleteTenant);
 
 export default router;

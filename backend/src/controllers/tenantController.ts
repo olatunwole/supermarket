@@ -150,3 +150,23 @@ export const updateTenantSubscription = async (req: AuthRequest, res: Response):
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+// Permanently delete merchant tenant context (Super Admin only)
+export const deleteTenant = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    if (Number(id) === 1) {
+      res.status(400).json({ error: 'Cannot delete default system tenant' });
+      return;
+    }
+    const result = await query('DELETE FROM tenants WHERE id = $1 RETURNING *', [id]);
+    if (!result.rows[0]) {
+      res.status(404).json({ error: 'Tenant not found' });
+      return;
+    }
+    await logAudit(req, 'DELETE_TENANT', `Deleted merchant tenant name=${result.rows[0].name} subdomain=${result.rows[0].subdomain}`);
+    res.json({ success: true, message: 'Tenant registry deleted successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+};

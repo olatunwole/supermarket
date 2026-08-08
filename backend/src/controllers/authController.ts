@@ -20,7 +20,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const result = await query(
-      'SELECT * FROM users WHERE username = $1 AND tenant_id = $2 AND is_active = true',
+      'SELECT * FROM users WHERE (username = $1 OR email = $1) AND tenant_id = $2 AND is_active = true',
       [username, tenant.id]
     );
     const user = result.rows[0];

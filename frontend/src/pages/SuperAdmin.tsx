@@ -214,6 +214,19 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
     await impersonate(adminUserId);
   };
 
+  const handleDeleteTenant = async (tenantId: number) => {
+    if (!window.confirm('WARNING: Are you sure you want to permanently delete this merchant tenant and all of its staff accounts? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await apiFetch(`/api/tenants/${tenantId}`, { method: 'DELETE' });
+      setTenants(tenants.filter(t => t.id !== tenantId));
+      showNotification('Merchant tenant successfully deleted', 'success');
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to delete merchant tenant', 'error');
+    }
+  };
+
   const planFeatureChange = (planId: number, field: string, value: any) => {
     setPlans(plans.map(p => {
       if (p.id === planId) {
@@ -435,7 +448,7 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
                           </select>
                         </div>
                       </td>
-                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                      <td style={{ padding: '16px 12px', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                         <button
                           className="btn btn-secondary"
                           onClick={() => handleImpersonateClick(t.admin_user_id)}
@@ -447,11 +460,31 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
                             gap: '4px',
                             background: 'rgba(124, 58, 237, 0.1)',
                             border: '1px solid rgba(124, 58, 237, 0.3)',
-                            color: '#a78bfa'
+                            color: '#a78bfa',
+                            margin: 0
                           }}
                         >
                           🕵️ Impersonate
                         </button>
+                        {t.id !== 1 && (
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleDeleteTenant(t.id)}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.8rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#f87171',
+                              margin: 0
+                            }}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
