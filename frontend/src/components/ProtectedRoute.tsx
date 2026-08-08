@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 interface ProtectedRouteProps {
@@ -8,6 +8,7 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -39,6 +40,23 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // subscription state evaluation
+  const isPaid = 
+    user.role === 'super_admin' || 
+    user.subscription_status === 'active' || 
+    user.subscription_status === 'granted' || 
+    user.subscription_status === 'grace_period';
+
+  // If unpaid/expired and not on payment page, redirect
+  if (!isPaid && location.pathname !== '/payment') {
+    return <Navigate to="/payment" replace />;
+  }
+
+  // If paid and on payment page, redirect back to dashboard
+  if (isPaid && location.pathname === '/payment') {
+    return <Navigate to="/" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {

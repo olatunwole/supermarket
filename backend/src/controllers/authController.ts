@@ -33,14 +33,55 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
+    let tenantStatus = tenant.subscription_status || 'unpaid';
+    const expiresAt = tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : null;
+    const graceEndsAt = tenant.grace_period_ends_at ? new Date(tenant.grace_period_ends_at) : null;
+    const now = new Date();
+
+    if (tenantStatus === 'active') {
+      if (expiresAt && expiresAt < now) {
+        if (graceEndsAt && graceEndsAt > now) {
+          tenantStatus = 'grace_period';
+        } else {
+          tenantStatus = 'expired';
+        }
+        await query('UPDATE tenants SET subscription_status = $1 WHERE id = $2', [tenantStatus, tenant.id]);
+      }
+    } else if (tenantStatus === 'grace_period') {
+      if (graceEndsAt && graceEndsAt < now) {
+        tenantStatus = 'expired';
+        await query('UPDATE tenants SET subscription_status = $1 WHERE id = $2', [tenantStatus, tenant.id]);
+      }
+    }
+
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role, tenant_id: user.tenant_id, subscription_plan: tenant.subscription_plan },
+      { 
+        id: user.id, 
+        username: user.username, 
+        role: user.role, 
+        tenant_id: user.tenant_id, 
+        subscription_plan: tenant.subscription_plan,
+        subscription_status: tenantStatus,
+        subscription_expires_at: tenant.subscription_expires_at,
+        grace_period_ends_at: tenant.grace_period_ends_at
+      },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: (process.env.JWT_EXPIRES_IN || '8h') as any }
     );
     res.json({
       token,
-      user: { id: user.id, username: user.username, email: user.email, role: user.role, tenant_id: user.tenant_id, tenant_name: tenant.name, subscription_plan: tenant.subscription_plan },
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        role: user.role, 
+        tenant_id: user.tenant_id, 
+        tenant_name: tenant.name, 
+        subscription_plan: tenant.subscription_plan,
+        subscription_status: tenantStatus,
+        subscription_expires_at: tenant.subscription_expires_at,
+        grace_period_ends_at: tenant.grace_period_ends_at
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error', stack: err.stack });
@@ -50,7 +91,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await query(
-      `SELECT u.id, u.username, u.email, u.role, u.is_active, u.created_at, u.tenant_id, t.name as tenant_name, t.subscription_plan
+      `SELECT u.id, u.username, u.email, u.role, u.is_active, u.created_at, u.tenant_id, 
+              t.name as tenant_name, t.subscription_plan, t.subscription_status, 
+              t.subscription_expires_at, t.grace_period_ends_at, t.payment_status
        FROM users u
        LEFT JOIN tenants t ON u.tenant_id = t.id
        WHERE u.id = $1`,
@@ -60,8 +103,33 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    res.json(result.rows[0]);
-  } catch {
+
+    const row = result.rows[0];
+    let tenantStatus = row.subscription_status || 'unpaid';
+    const expiresAt = row.subscription_expires_at ? new Date(row.subscription_expires_at) : null;
+    const graceEndsAt = row.grace_period_ends_at ? new Date(row.grace_period_ends_at) : null;
+    const now = new Date();
+
+    if (tenantStatus === 'active') {
+      if (expiresAt && expiresAt < now) {
+        if (graceEndsAt && graceEndsAt > now) {
+          tenantStatus = 'grace_period';
+        } else {
+          tenantStatus = 'expired';
+        }
+        await query('UPDATE tenants SET subscription_status = $1 WHERE id = $2', [tenantStatus, row.tenant_id]);
+        row.subscription_status = tenantStatus;
+      }
+    } else if (tenantStatus === 'grace_period') {
+      if (graceEndsAt && graceEndsAt < now) {
+        tenantStatus = 'expired';
+        await query('UPDATE tenants SET subscription_status = $1 WHERE id = $2', [tenantStatus, row.tenant_id]);
+        row.subscription_status = tenantStatus;
+      }
+    }
+
+    res.json(row);
+  } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 };

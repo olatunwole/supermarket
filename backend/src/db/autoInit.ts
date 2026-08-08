@@ -13,19 +13,85 @@ export const autoInitDatabase = async () => {
         id SERIAL PRIMARY KEY,
         name VARCHAR(150) NOT NULL,
         subdomain VARCHAR(100) UNIQUE NOT NULL,
-        subscription_plan VARCHAR(20) DEFAULT 'starter' CHECK (subscription_plan IN ('starter', 'pro', 'advanced')),
-        subscription_status VARCHAR(20) DEFAULT 'active',
+        subscription_plan VARCHAR(20) DEFAULT 'starter',
+        subscription_status VARCHAR(20) DEFAULT 'unpaid',
+        subscription_expires_at TIMESTAMP,
+        grace_period_ends_at TIMESTAMP,
+        payment_gateway VARCHAR(50),
+        payment_status VARCHAR(50) DEFAULT 'unpaid',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Insert default tenant if missing
+    // Ensure the CHECK constraint on tenants.subscription_plan is dropped
     await client.query(`
-      INSERT INTO tenants (id, name, subdomain, subscription_plan, subscription_status)
-      VALUES (1, 'Default Supermarket Store', 'default', 'advanced', 'active')
+      ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_subscription_plan_check;
+    `);
+
+    // Ensure newer columns exist in case table was created previously
+    await client.query(`
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMP;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMP;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS payment_gateway VARCHAR(50);
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'unpaid';
+    `);
+
+    // Create subscription_plans table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS subscription_plans (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) UNIQUE NOT NULL,
+        price_gbp NUMERIC(10, 2) NOT NULL,
+        features JSONB NOT NULL DEFAULT '{}',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Seed default subscription plans
+    await client.query(`
+      INSERT INTO subscription_plans (name, price_gbp, features) VALUES
+      ('Starter', 19.00, '{"accounting": false, "advanced_reports": false, "max_products": 50, "max_users": 3}'),
+      ('Pro', 49.00, '{"accounting": true, "advanced_reports": false, "max_products": 500, "max_users": 10}'),
+      ('Ultra', 99.00, '{"accounting": true, "advanced_reports": true, "max_products": 99999, "max_users": 999}')
+      ON CONFLICT (name) DO NOTHING;
+    `);
+
+    // Create system_settings table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id SERIAL PRIMARY KEY,
+        grace_period_days INTEGER DEFAULT 7,
+        reminder_days_before INTEGER DEFAULT 3,
+        paypal_client_id VARCHAR(255) DEFAULT 'mock_paypal_client_id',
+        paystack_public_key VARCHAR(255) DEFAULT 'mock_paystack_public_key',
+        flutterwave_public_key VARCHAR(255) DEFAULT 'mock_flutterwave_public_key',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Seed default system settings
+    await client.query(`
+      INSERT INTO system_settings (id, grace_period_days, reminder_days_before)
+      VALUES (1, 7, 3)
       ON CONFLICT (id) DO NOTHING;
     `);
+
+    // Insert default tenant if missing (default tenant starts active and on Ultra plan)
+    await client.query(`
+      INSERT INTO tenants (id, name, subdomain, subscription_plan, subscription_status)
+      VALUES (1, 'Default Supermarket Store', 'default', 'Ultra', 'active')
+      ON CONFLICT (id) DO NOTHING;
+    `);
+
+    // Ensure default tenant remains active on updates
+    await client.query(`
+      UPDATE tenants SET subscription_status = 'active', subscription_plan = 'Ultra' WHERE id = 1;
+    `);
+
     await client.query(`SELECT setval('tenants_id_seq', COALESCE((SELECT MAX(id)+1 FROM tenants), 1), false);`);
 
     // Helper to alter table to add tenant_id and migrate existing rows

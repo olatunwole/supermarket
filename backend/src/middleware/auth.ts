@@ -8,6 +8,9 @@ export interface AuthRequest extends Request {
     role: string;
     tenant_id: number;
     subscription_plan: string;
+    subscription_status?: string;
+    subscription_expires_at?: string;
+    grace_period_ends_at?: string;
   };
 }
 

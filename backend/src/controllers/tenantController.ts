@@ -107,7 +107,11 @@ export const signupTenant = async (req: Request, res: Response): Promise<void> =
 export const getTenants = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await query(`
-      SELECT t.*, COUNT(u.id)::integer as user_count
+      SELECT t.*, 
+             COUNT(u.id)::integer as user_count,
+             (SELECT id FROM users WHERE tenant_id = t.id AND role = 'admin' LIMIT 1) as admin_user_id,
+             (SELECT username FROM users WHERE tenant_id = t.id AND role = 'admin' LIMIT 1) as admin_username,
+             (SELECT email FROM users WHERE tenant_id = t.id AND role = 'admin' LIMIT 1) as admin_email
       FROM tenants t
       LEFT JOIN users u ON t.id = u.tenant_id
       GROUP BY t.id

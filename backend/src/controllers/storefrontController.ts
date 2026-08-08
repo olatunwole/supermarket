@@ -10,7 +10,7 @@ export const getStoreCatalog = async (req: Request, res: Response): Promise<void
       res.status(404).json({ error: 'Store not found' });
       return;
     }
-    if (tenant.subscription_status !== 'active') {
+    if (tenant.subscription_status !== 'active' && tenant.subscription_status !== 'granted') {
       res.status(403).json({ error: 'Store subscription is inactive' });
       return;
     }

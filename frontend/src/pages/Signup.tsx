@@ -9,7 +9,7 @@ export const Signup: React.FC = () => {
 
   const [name, setName] = useState('');
   const [subdomain, setSubdomain] = useState('');
-  const [subscriptionPlan, setSubscriptionPlan] = useState<'Starter' | 'Pro' | 'Advanced'>('Pro');
+  const [subscriptionPlan, setSubscriptionPlan] = useState<'Starter' | 'Pro' | 'Ultra'>('Pro');
   const [adminUsername, setAdminUsername] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -137,10 +137,10 @@ export const Signup: React.FC = () => {
               </div>
 
               <div 
-                className={`plan-card ${subscriptionPlan === 'Advanced' ? 'active' : ''}`}
-                onClick={() => !submitting && setSubscriptionPlan('Advanced')}
+                className={`plan-card ${subscriptionPlan === 'Ultra' ? 'active' : ''}`}
+                onClick={() => !submitting && setSubscriptionPlan('Ultra')}
               >
-                <h4>Advanced</h4>
+                <h4>Ultra</h4>
                 <p className="plan-price">£99<span>/mo</span></p>
                 <ul>
                   <li><CheckCircle size={12} /> Unlimited products</li>

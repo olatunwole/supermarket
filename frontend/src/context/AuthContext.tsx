@@ -7,7 +7,11 @@ export interface User {
   role: 'admin' | 'manager' | 'cashier' | 'stock_clerk' | 'super_admin';
   tenant_id?: number;
   tenant_name?: string;
-  subscription_plan?: 'Starter' | 'Pro' | 'Advanced';
+  subscription_plan?: 'Starter' | 'Pro' | 'Advanced' | 'Ultra';
+  subscription_status?: 'active' | 'unpaid' | 'expired' | 'grace_period' | 'granted';
+  subscription_expires_at?: string;
+  grace_period_ends_at?: string;
+  impersonatedBy?: string;
 }
 
 export interface StoreSettings {
@@ -26,7 +30,7 @@ interface AuthContextType {
   login: (username: string, password: string, subdomain?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   apiFetch: <T = any>(url: string, options?: RequestInit) => Promise<T>;
-  showNotification: (message: string, type: 'success' | 'error' | 'warning') => void;
+  showNotification: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
   currency: string;
   setCurrency: (currency: string) => void;
   formatCurrency: (val: number | string) => string;
@@ -43,6 +47,9 @@ interface AuthContextType {
   toggleTheme: () => void;
   bgColor: string;
   setBgColor: (color: string) => void;
+  impersonate: (userId: number) => Promise<void>;
+  exitImpersonation: () => void;
+  isImpersonating: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,7 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info' } | null>(null);
   const [currency, setCurrencyState] = useState<string>(() => {
     return localStorage.getItem('pos_currency') || 'GBP';
   });
@@ -286,7 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return val * rate;
   };
 
-  const showNotification = (message: string, type: 'success' | 'error' | 'warning') => {
+  const showNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setNotification({ message, type });
     setTimeout(() => {
       setNotification(null);
@@ -380,8 +387,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return data as T;
   };
 
+  const [isImpersonating, setIsImpersonating] = useState<boolean>(() => {
+    return localStorage.getItem('pos_original_token') !== null;
+  });
+
+  const impersonate = async (userId: number) => {
+    try {
+      const data = await apiFetch<{ token: string; user: User }>(`/api/tenants/impersonate/${userId}`, {
+        method: 'POST'
+      });
+
+      // Save original credentials to exit later
+      localStorage.setItem('pos_original_token', token || '');
+      localStorage.setItem('pos_original_user', JSON.stringify(user));
+
+      // Overwrite current active credentials
+      localStorage.setItem('pos_token', data.token);
+      localStorage.setItem('pos_user', JSON.stringify(data.user));
+
+      setToken(data.token);
+      setUser(data.user);
+      setIsImpersonating(true);
+
+      showNotification(`Impersonating ${data.user.username} successfully.`, 'success');
+      window.location.href = '/';
+    } catch (err: any) {
+      showNotification(err.message || 'Impersonation failed', 'error');
+    }
+  };
+
+  const exitImpersonation = () => {
+    const originalToken = localStorage.getItem('pos_original_token');
+    const originalUserStr = localStorage.getItem('pos_original_user');
+
+    if (originalToken && originalUserStr) {
+      localStorage.setItem('pos_token', originalToken);
+      localStorage.setItem('pos_user', originalUserStr);
+
+      localStorage.removeItem('pos_original_token');
+      localStorage.removeItem('pos_original_user');
+
+      setToken(originalToken);
+      setUser(JSON.parse(originalUserStr));
+      setIsImpersonating(false);
+
+      showNotification('Returned to Super Admin session', 'success');
+      window.location.href = '/super-admin';
+    } else {
+      showNotification('No active impersonation session to exit.', 'error');
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, apiFetch, showNotification, currency, setCurrency, formatCurrency, rates, updateRate, convertToBase, convertToActive, storeSettings, updateStoreSettings, themeColor, setThemeColor, bgColor, setBgColor, theme, setTheme, toggleTheme }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, apiFetch, showNotification, currency, setCurrency, formatCurrency, rates, updateRate, convertToBase, convertToActive, storeSettings, updateStoreSettings, themeColor, setThemeColor, bgColor, setBgColor, theme, setTheme, toggleTheme, impersonate, exitImpersonation, isImpersonating }}>
       {children}
       {notification && (
         <div 
@@ -392,6 +450,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 ? 'var(--success-emerald)' 
                 : notification.type === 'error' 
                 ? 'var(--error-rose)' 
+                : notification.type === 'info'
+                ? 'var(--accent-cyan)'
                 : 'var(--warning-amber)'
             }`
           }}
@@ -400,6 +460,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             {notification.type === 'success' && '✅ '}
             {notification.type === 'error' && '❌ '}
             {notification.type === 'warning' && '⚠️ '}
+            {notification.type === 'info' && 'ℹ️ '}
             {notification.message}
           </div>
         </div>

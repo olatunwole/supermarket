@@ -17,6 +17,7 @@ import { ScanCompanion } from './pages/ScanCompanion';
 import { Signup } from './pages/Signup';
 import { Storefront } from './pages/Storefront';
 import { SuperAdmin } from './pages/SuperAdmin';
+import { Payment } from './pages/Payment';
 
 function App() {
   return (
@@ -29,8 +30,12 @@ function App() {
           <Route path="/store/:subdomain" element={<Storefront />} />
           <Route path="/scan-companion" element={<ScanCompanion />} />
 
-          {/* Protected Layout Routes */}
+          {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
+            {/* Out-of-layout standalone pages */}
+            <Route path="/payment" element={<Payment />} />
+
+            {/* Layout-wrapped pages */}
             <Route element={<Layout />}>
               {/* Common dashboard access for all staff */}
               <Route path="/" element={<Dashboard />} />
