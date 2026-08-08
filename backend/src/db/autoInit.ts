@@ -68,15 +68,39 @@ export const autoInitDatabase = async () => {
         paypal_client_id VARCHAR(255) DEFAULT 'mock_paypal_client_id',
         paystack_public_key VARCHAR(255) DEFAULT 'mock_paystack_public_key',
         flutterwave_public_key VARCHAR(255) DEFAULT 'mock_flutterwave_public_key',
+        platform_name VARCHAR(150) DEFAULT 'Antigravity SaaS',
+        platform_theme_color VARCHAR(50) DEFAULT 'purple',
+        platform_theme_bg VARCHAR(50) DEFAULT 'obsidian',
+        platform_logo TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
+    // Ensure newer platform branding columns exist
+    await client.query(`
+      ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS platform_name VARCHAR(150) DEFAULT 'Antigravity SaaS';
+      ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS platform_theme_color VARCHAR(50) DEFAULT 'purple';
+      ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS platform_theme_bg VARCHAR(50) DEFAULT 'obsidian';
+      ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS platform_logo TEXT;
+    `);
+
+    // Create system_errors table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS system_errors (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        error_message TEXT NOT NULL,
+        stack_trace TEXT,
+        resolved BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
     // Seed default system settings
     await client.query(`
-      INSERT INTO system_settings (id, grace_period_days, reminder_days_before)
-      VALUES (1, 7, 3)
+      INSERT INTO system_settings (id, grace_period_days, reminder_days_before, platform_name, platform_theme_color, platform_theme_bg)
+      VALUES (1, 7, 3, 'Antigravity SaaS', 'purple', 'obsidian')
       ON CONFLICT (id) DO NOTHING;
     `);
 

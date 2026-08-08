@@ -83,6 +83,7 @@ function App() {
                 <Route path="plans" element={<SuperAdmin tab="plans" />} />
                 <Route path="settings" element={<SuperAdmin tab="settings" />} />
                 <Route path="audit-logs" element={<SuperAdmin tab="audit-logs" />} />
+                <Route path="errors" element={<SuperAdmin tab="errors" />} />
               </Route>
 
               {/* Settings Configuration Access (All logged-in staff users) */}

@@ -33,6 +33,10 @@ interface SystemSettings {
   paypal_client_id: string;
   paystack_public_key: string;
   flutterwave_public_key: string;
+  platform_name?: string;
+  platform_theme_color?: string;
+  platform_theme_bg?: string;
+  platform_logo?: string;
 }
 
 interface AuditLog {
@@ -47,8 +51,18 @@ interface AuditLog {
   created_at: string;
 }
 
+interface SystemError {
+  id: number;
+  tenant_id: number;
+  tenant_name?: string;
+  error_message: string;
+  stack_trace?: string;
+  resolved: boolean;
+  created_at: string;
+}
+
 interface SuperAdminProps {
-  tab?: 'overview' | 'merchants' | 'plans' | 'settings' | 'audit-logs';
+  tab?: 'overview' | 'merchants' | 'plans' | 'settings' | 'audit-logs' | 'errors';
 }
 
 export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
@@ -61,12 +75,18 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
     reminder_days_before: 3,
     paypal_client_id: '',
     paystack_public_key: '',
-    flutterwave_public_key: ''
+    flutterwave_public_key: '',
+    platform_name: 'Antigravity SaaS',
+    platform_theme_color: 'purple',
+    platform_theme_bg: 'obsidian',
+    platform_logo: ''
   });
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [systemErrors, setSystemErrors] = useState<SystemError[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [errorsLoading, setErrorsLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
@@ -81,7 +101,13 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
       setTenants(tenantsData);
       setPlans(plansData);
       if (settingsData && settingsData.grace_period_days !== undefined) {
-        setSettings(settingsData);
+        setSettings({
+          ...settingsData,
+          platform_name: settingsData.platform_name || 'Antigravity SaaS',
+          platform_theme_color: settingsData.platform_theme_color || 'purple',
+          platform_theme_bg: settingsData.platform_theme_bg || 'obsidian',
+          platform_logo: settingsData.platform_logo || ''
+        });
       }
     } catch (err: any) {
       showNotification(err.message || 'Failed to fetch administrative data', 'error');
@@ -102,10 +128,24 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
     }
   };
 
+  const fetchErrors = async () => {
+    setErrorsLoading(true);
+    try {
+      const errorsData = await apiFetch('/api/tenants/errors');
+      setSystemErrors(errorsData);
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to fetch system error logs', 'error');
+    } finally {
+      setErrorsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     if (tab === 'audit-logs') {
       fetchLogs();
+    } else if (tab === 'errors') {
+      fetchErrors();
     }
   }, [tab]);
 
@@ -156,6 +196,16 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
     }
   };
 
+  const handleResolveError = async (errorId: number) => {
+    try {
+      await apiFetch(`/api/tenants/errors/${errorId}/resolve`, { method: 'PUT' });
+      setSystemErrors(systemErrors.map(e => e.id === errorId ? { ...e, resolved: true } : e));
+      showNotification('System error log marked resolved', 'success');
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to resolve error log', 'error');
+    }
+  };
+
   const handleImpersonateClick = async (adminUserId: number | undefined) => {
     if (!adminUserId) {
       showNotification('Cannot impersonate. Owner user context is missing.', 'error');
@@ -186,6 +236,8 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
   const refreshCurrentView = () => {
     if (tab === 'audit-logs') {
       fetchLogs();
+    } else if (tab === 'errors') {
+      fetchErrors();
     }
     fetchData();
   };
@@ -202,6 +254,7 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
       case 'plans': return 'Pricing Plans & Features';
       case 'settings': return 'SaaS Configuration Settings';
       case 'audit-logs': return 'System Audit Logs';
+      case 'errors': return 'System Error Logs';
       default: return 'Platform Administration';
     }
   };
@@ -214,10 +267,10 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Shield style={{ color: 'var(--accent-cyan)' }} /> {getPageTitle()}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Global tenant administration, licensing, and package upgrades</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Global tenant administration, licensing, and branding setup</p>
         </div>
-        <button className="btn btn-secondary" onClick={refreshCurrentView} disabled={loading || logsLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <RefreshCw size={16} className={loading || logsLoading ? 'spin-anim' : ''} /> Refresh View
+        <button className="btn btn-secondary" onClick={refreshCurrentView} disabled={loading || logsLoading || errorsLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <RefreshCw size={16} className={loading || logsLoading || errorsLoading ? 'spin-anim' : ''} /> Refresh View
         </button>
       </div>
 
@@ -268,7 +321,7 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
           {tab === 'overview' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
               <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Welcome, SaaS Administrator</h3>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Welcome, Platform Administrator</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
                   Use this dedicated admin panel to control merchant operations. You have complete authority to manage packages, update pricing structures, configure API credentials, and review user audit trails across all registered business tenants.
                 </p>
@@ -297,6 +350,10 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
                   </Link>
                   <Link to="/super-admin/audit-logs" className="action-link-item">
                     <span>Review System Audit Trails</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                  <Link to="/super-admin/errors" className="action-link-item">
+                    <span>Review System Error Logs</span>
                     <ArrowRight size={16} />
                   </Link>
                 </div>
@@ -484,7 +541,86 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Set licensing parameters and public credentials for integrations.</p>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Platform Identity */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
+                  <Briefcase size={16} /> Platform Identity & Custom Branding
+                </h4>
+
+                <div className="form-group">
+                  <label className="form-label">SaaS Platform Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={settings.platform_name || ''}
+                    onChange={(e) => setSettings({ ...settings, platform_name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Accent Theme Color</label>
+                    <select
+                      className="form-input"
+                      value={settings.platform_theme_color || 'purple'}
+                      onChange={(e) => setSettings({ ...settings, platform_theme_color: e.target.value })}
+                      style={{ background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                    >
+                      <option value="cyan">Cyan</option>
+                      <option value="emerald">Emerald</option>
+                      <option value="indigo">Indigo</option>
+                      <option value="rose">Rose</option>
+                      <option value="amber">Amber</option>
+                      <option value="purple">Purple</option>
+                      <option value="orange">Orange</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Background Theme Style</label>
+                    <select
+                      className="form-input"
+                      value={settings.platform_theme_bg || 'obsidian'}
+                      onChange={(e) => setSettings({ ...settings, platform_theme_bg: e.target.value })}
+                      style={{ background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                    >
+                      <option value="obsidian">Obsidian Black</option>
+                      <option value="slate">Slate Grey</option>
+                      <option value="forest">Forest Moss</option>
+                      <option value="indigo">Indigo Deep</option>
+                      <option value="midnight">Midnight Blue</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Upload Custom Platform Logo</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="form-input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setSettings({ ...settings, platform_logo: reader.result as string });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  {settings.platform_logo && (
+                    <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <img src={settings.platform_logo} alt="Preview" style={{ width: '40px', height: '40px', objectFit: 'contain', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '4px' }} />
+                      <button type="button" className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => setSettings({ ...settings, platform_logo: '' })}>Remove Logo</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
                 <div className="form-group">
                   <label className="form-label">Grace Period (Days)</label>
                   <input
@@ -593,6 +729,61 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
                         </td>
                         <td style={{ padding: '12px', color: 'var(--text-secondary)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.details}>
                           {log.details}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* Layout 6: System Error Logs */}
+          {tab === 'errors' && (
+            <div className="table-wrapper glass-card" style={{ padding: '20px' }}>
+              <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldAlert style={{ color: 'var(--accent-cyan)' }} /> Platform Runtime Error Trails
+              </h2>
+
+              {errorsLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <div className="spinner" style={{ margin: '0 auto 16px auto' }}></div>
+                  Loading runtime logs...
+                </div>
+              ) : (
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Timestamp</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Tenant</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Message</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Status</th>
+                      <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {systemErrors.map((err) => (
+                      <tr key={err.id} style={{ borderBottom: '1px solid var(--glass-border)', fontSize: '0.88rem' }}>
+                        <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                          {new Date(err.created_at).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '12px', fontWeight: 600 }}>
+                          {err.tenant_name || 'Platform Global'}
+                        </td>
+                        <td style={{ padding: '12px', color: '#f43f5e', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={err.stack_trace || err.error_message}>
+                          {err.error_message}
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <span className={`badge ${err.resolved ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px' }}>
+                            {err.resolved ? 'Resolved' : 'Active'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {!err.resolved && (
+                            <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => handleResolveError(err.id)}>
+                              Resolve
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

@@ -6,7 +6,9 @@ import {
   paymentSuccess, 
   getSystemSettings, 
   updateSystemSettings, 
-  impersonateUser 
+  impersonateUser,
+  getPlatformErrors,
+  resolvePlatformError
 } from '../controllers/subscriptionController';
 import { authenticate, authorize } from '../middleware/auth';
 
@@ -25,6 +27,10 @@ router.post('/payment-success', authenticate, paymentSuccess);
 // System SaaS Settings
 router.get('/settings', authenticate, authorize('super_admin'), getSystemSettings);
 router.put('/settings', authenticate, authorize('super_admin'), updateSystemSettings);
+
+// System Platform Error Logs
+router.get('/errors', authenticate, authorize('super_admin'), getPlatformErrors);
+router.put('/errors/:id/resolve', authenticate, authorize('super_admin'), resolvePlatformError);
 
 // Administrative User Impersonation
 router.post('/impersonate/:userId', authenticate, authorize('super_admin'), impersonateUser);

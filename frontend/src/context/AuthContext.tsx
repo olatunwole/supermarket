@@ -315,6 +315,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, []);
 
+  // Load SaaS platform branding if logged in user is the platform superadmin
+  useEffect(() => {
+    if (!token || !user || user.role !== 'super_admin') {
+      return;
+    }
+
+    const loadPlatformBranding = async () => {
+      try {
+        const response = await fetch(`${(import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '')}/api/tenants/settings`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+          const settingsData = await response.json();
+          if (settingsData && settingsData.platform_name) {
+            // Apply platform settings to store settings state
+            setStoreSettingsState({
+              name: settingsData.platform_name,
+              address: 'Platform Control Panel',
+              phone: 'N/A',
+              taxId: 'N/A',
+              logo: settingsData.platform_logo || '',
+              inactivityTimeout: 0
+            });
+            // Apply theme configuration
+            if (settingsData.platform_theme_color) {
+              setThemeColorState(settingsData.platform_theme_color);
+              localStorage.setItem('pos_theme_color', settingsData.platform_theme_color);
+            }
+            if (settingsData.platform_theme_bg) {
+              setBgColorState(settingsData.platform_theme_bg);
+              localStorage.setItem('pos_bg_color', settingsData.platform_theme_bg);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load platform branding settings:', err);
+      }
+    };
+
+    loadPlatformBranding();
+  }, [token, user]);
+
   const login = async (username: string, password: string, subdomain?: string) => {
     try {
       const apiBaseUrl = (import.meta.env.VITE_APP_API_URL || '').replace(/\/$/, '');

@@ -15,7 +15,8 @@ import {
   Landmark,
   X,
   Shield,
-  Layers
+  Layers,
+  ShieldAlert
 } from 'lucide-react';
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ isOpen, onClose }) => {
@@ -52,6 +53,12 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
       to: '/super-admin/audit-logs',
       label: 'System Audit Logs',
       icon: <Shield size={20} />,
+      roles: ['super_admin']
+    },
+    {
+      to: '/super-admin/errors',
+      label: 'System Error Logs',
+      icon: <ShieldAlert size={20} />,
       roles: ['super_admin']
     }
   ] : [

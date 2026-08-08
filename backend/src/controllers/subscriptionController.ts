@@ -107,7 +107,17 @@ export const getSystemSettings = async (req: AuthRequest, res: Response): Promis
 
 // Update global system settings (Super Admin only)
 export const updateSystemSettings = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { grace_period_days, reminder_days_before, paypal_client_id, paystack_public_key, flutterwave_public_key } = req.body;
+  const { 
+    grace_period_days, 
+    reminder_days_before, 
+    paypal_client_id, 
+    paystack_public_key, 
+    flutterwave_public_key,
+    platform_name,
+    platform_theme_color,
+    platform_theme_bg,
+    platform_logo
+  } = req.body;
   try {
     const result = await query(
       `UPDATE system_settings
@@ -116,12 +126,26 @@ export const updateSystemSettings = async (req: AuthRequest, res: Response): Pro
            paypal_client_id = COALESCE($3, paypal_client_id),
            paystack_public_key = COALESCE($4, paystack_public_key),
            flutterwave_public_key = COALESCE($5, flutterwave_public_key),
+           platform_name = COALESCE($6, platform_name),
+           platform_theme_color = COALESCE($7, platform_theme_color),
+           platform_theme_bg = COALESCE($8, platform_theme_bg),
+           platform_logo = COALESCE($9, platform_logo),
            updated_at = NOW()
        WHERE id = 1 RETURNING *`,
-      [grace_period_days, reminder_days_before, paypal_client_id, paystack_public_key, flutterwave_public_key]
+      [
+        grace_period_days, 
+        reminder_days_before, 
+        paypal_client_id, 
+        paystack_public_key, 
+        flutterwave_public_key,
+        platform_name,
+        platform_theme_color,
+        platform_theme_bg,
+        platform_logo
+      ]
     );
 
-    await logAudit(req, 'UPDATE_SYSTEM_SETTINGS', 'Updated SaaS licensing / gateway parameters');
+    await logAudit(req, 'UPDATE_SYSTEM_SETTINGS', 'Updated SaaS licensing / gateway / branding parameters');
     res.json(result.rows[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error' });
@@ -184,6 +208,40 @@ export const impersonateUser = async (req: AuthRequest, res: Response): Promise<
         impersonatedBy: req.user?.username
       }
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+};
+
+// Retrieve platform runtime errors (Super Admin only)
+export const getPlatformErrors = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await query(`
+      SELECT se.*, t.name as tenant_name
+      FROM system_errors se
+      LEFT JOIN tenants t ON se.tenant_id = t.id
+      ORDER BY se.created_at DESC
+      LIMIT 200
+    `);
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+};
+
+// Mark platform error log as resolved (Super Admin only)
+export const resolvePlatformError = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const result = await query(
+      'UPDATE system_errors SET resolved = true WHERE id = $1 RETURNING *',
+      [id]
+    );
+    if (!result.rows[0]) {
+      res.status(404).json({ error: 'Error log not found' });
+      return;
+    }
+    res.json(result.rows[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error' });
   }
