@@ -59,6 +59,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     return <Navigate to="/" replace />;
   }
 
+  // If superadmin goes to root /, redirect to superadmin panel
+  if (user.role === 'super_admin' && location.pathname === '/') {
+    return <Navigate to="/super-admin" replace />;
+  }
+
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
       <div style={{

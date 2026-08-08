@@ -14,7 +14,8 @@ import {
   Settings,
   Landmark,
   X,
-  Shield
+  Shield,
+  Layers
 } from 'lucide-react';
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ isOpen, onClose }) => {
@@ -22,18 +23,43 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({ 
 
   if (!user) return null;
 
-  const links = [
+  const links = user.role === 'super_admin' ? [
+    {
+      to: '/super-admin',
+      label: 'Platform Overview',
+      icon: <LayoutDashboard size={20} />,
+      roles: ['super_admin']
+    },
+    {
+      to: '/super-admin/merchants',
+      label: 'Merchant Registry',
+      icon: <UsersIcon size={20} />,
+      roles: ['super_admin']
+    },
+    {
+      to: '/super-admin/plans',
+      label: 'Pricing Plans',
+      icon: <Layers size={20} />,
+      roles: ['super_admin']
+    },
+    {
+      to: '/super-admin/settings',
+      label: 'SaaS Config Settings',
+      icon: <Settings size={20} />,
+      roles: ['super_admin']
+    },
+    {
+      to: '/super-admin/audit-logs',
+      label: 'System Audit Logs',
+      icon: <Shield size={20} />,
+      roles: ['super_admin']
+    }
+  ] : [
     {
       to: '/',
       label: 'Dashboard',
       icon: <LayoutDashboard size={20} />,
-      roles: ['admin', 'manager', 'cashier', 'stock_clerk', 'super_admin']
-    },
-    {
-      to: '/super-admin',
-      label: 'Super Admin',
-      icon: <Shield size={20} />,
-      roles: ['super_admin']
+      roles: ['admin', 'manager', 'cashier', 'stock_clerk']
     },
     {
       to: '/pos',

@@ -76,9 +76,13 @@ function App() {
                 <Route index element={<Users />} />
               </Route>
               
-              {/* Super Admin Access */}
+              {/* Super Admin Access & Sub-routing */}
               <Route path="/super-admin" element={<ProtectedRoute allowedRoles={['super_admin']} />}>
-                <Route index element={<SuperAdmin />} />
+                <Route index element={<SuperAdmin tab="overview" />} />
+                <Route path="merchants" element={<SuperAdmin tab="merchants" />} />
+                <Route path="plans" element={<SuperAdmin tab="plans" />} />
+                <Route path="settings" element={<SuperAdmin tab="settings" />} />
+                <Route path="audit-logs" element={<SuperAdmin tab="audit-logs" />} />
               </Route>
 
               {/* Settings Configuration Access (All logged-in staff users) */}

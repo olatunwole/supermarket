@@ -3,6 +3,6 @@ import { authenticate, authorize } from '../middleware/auth';
 import { getAuditLogs } from '../controllers/auditLogController';
 
 const router = Router();
-router.get('/', authenticate, authorize('admin'), getAuditLogs);
+router.get('/', authenticate, authorize('admin', 'super_admin'), getAuditLogs);
 
 export default router;

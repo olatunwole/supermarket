@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Users, Server, Briefcase, TrendingUp, RefreshCw, Layers, DollarSign, Settings, UserCheck, ShieldAlert, Key } from 'lucide-react';
+import { Shield, Users, Server, Briefcase, TrendingUp, RefreshCw, Layers, DollarSign, Settings, UserCheck, ShieldAlert, Key, ClipboardList, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Tenant {
   id: number;
@@ -34,10 +35,25 @@ interface SystemSettings {
   flutterwave_public_key: string;
 }
 
-export const SuperAdmin: React.FC = () => {
+interface AuditLog {
+  id: number;
+  tenant_id: number;
+  tenant_name?: string;
+  user_id: number;
+  username?: string;
+  action: string;
+  details: string;
+  ip_address?: string;
+  created_at: string;
+}
+
+interface SuperAdminProps {
+  tab?: 'overview' | 'merchants' | 'plans' | 'settings' | 'audit-logs';
+}
+
+export const SuperAdmin: React.FC<SuperAdminProps> = ({ tab = 'overview' }) => {
   const { apiFetch, showNotification, impersonate, formatCurrency } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'settings'>('tenants');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [settings, setSettings] = useState<SystemSettings>({
@@ -47,8 +63,10 @@ export const SuperAdmin: React.FC = () => {
     paystack_public_key: '',
     flutterwave_public_key: ''
   });
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
@@ -72,9 +90,24 @@ export const SuperAdmin: React.FC = () => {
     }
   };
 
+  const fetchLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const logsData = await apiFetch('/api/audit-logs');
+      setAuditLogs(logsData);
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to fetch platform logs', 'error');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
-  }, []);
+    if (tab === 'audit-logs') {
+      fetchLogs();
+    }
+  }, [tab]);
 
   const handleUpdateTenantLicensing = async (tenantId: number, plan: string, status: string) => {
     setUpdatingId(tenantId);
@@ -150,10 +183,28 @@ export const SuperAdmin: React.FC = () => {
     }));
   };
 
+  const refreshCurrentView = () => {
+    if (tab === 'audit-logs') {
+      fetchLogs();
+    }
+    fetchData();
+  };
+
   // Metrics
   const activeCount = tenants.filter(t => t.subscription_status === 'active' || t.subscription_status === 'granted').length;
   const unpaidCount = tenants.filter(t => t.subscription_status === 'unpaid').length;
   const expiredCount = tenants.filter(t => t.subscription_status === 'expired' || t.subscription_status === 'grace_period').length;
+
+  const getPageTitle = () => {
+    switch (tab) {
+      case 'overview': return 'Platform Overview';
+      case 'merchants': return 'Merchant Registry';
+      case 'plans': return 'Pricing Plans & Features';
+      case 'settings': return 'SaaS Configuration Settings';
+      case 'audit-logs': return 'System Audit Logs';
+      default: return 'Platform Administration';
+    }
+  };
 
   return (
     <div className="superadmin-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -161,16 +212,16 @@ export const SuperAdmin: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Shield style={{ color: 'var(--accent-cyan)' }} /> Platform Super Admin Panel
+            <Shield style={{ color: 'var(--accent-cyan)' }} /> {getPageTitle()}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Global tenant administration, plans pricing, feature toggles, and payment gateways</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Global tenant administration, licensing, and package upgrades</p>
         </div>
-        <button className="btn btn-secondary" onClick={fetchData} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <RefreshCw size={16} className={loading ? 'spin-anim' : ''} /> Reload Data
+        <button className="btn btn-secondary" onClick={refreshCurrentView} disabled={loading || logsLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <RefreshCw size={16} className={loading || logsLoading ? 'spin-anim' : ''} /> Refresh View
         </button>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics Grid */}
       <div className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
         <div className="metric-card glass-card" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
@@ -205,19 +256,6 @@ export const SuperAdmin: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab Selectors */}
-      <div className="admin-tabs" style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
-        <button className={`tab-btn ${activeTab === 'tenants' ? 'active' : ''}`} onClick={() => setActiveTab('tenants')}>
-          <Users size={16} /> Merchants & Impersonation
-        </button>
-        <button className={`tab-btn ${activeTab === 'plans' ? 'active' : ''}`} onClick={() => setActiveTab('plans')}>
-          <Layers size={16} /> Subscription Packages
-        </button>
-        <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-          <Settings size={16} /> SaaS System Settings
-        </button>
-      </div>
-
       {loading ? (
         <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
           <div className="spinner" style={{ margin: '0 auto 16px auto' }}></div>
@@ -226,8 +264,48 @@ export const SuperAdmin: React.FC = () => {
       ) : (
         <div className="tab-viewport">
           
-          {/* Tab 1: Merchants & Impersonation */}
-          {activeTab === 'tenants' && (
+          {/* Layout 1: Platform Overview */}
+          {tab === 'overview' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+              <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Welcome, SaaS Administrator</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                  Use this dedicated admin panel to control merchant operations. You have complete authority to manage packages, update pricing structures, configure API credentials, and review user audit trails across all registered business tenants.
+                </p>
+                <div style={{ padding: '16px', background: 'rgba(6,182,212,0.05)', border: '1px solid var(--accent-cyan-glow)', borderRadius: '8px', marginTop: '8px' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-cyan)', marginBottom: '6px' }}>System Security Status</h4>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Platform-wide JWT sessions are monitored. Global transaction audit log is online.
+                  </p>
+                </div>
+              </div>
+
+              <div className="glass-card" style={{ padding: '24px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '16px' }}>Quick Operations</h3>
+                <div className="quick-actions-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <Link to="/super-admin/merchants" className="action-link-item">
+                    <span>Manage Merchant Registries</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                  <Link to="/super-admin/plans" className="action-link-item">
+                    <span>Edit Tier Pricing & Features</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                  <Link to="/super-admin/settings" className="action-link-item">
+                    <span>API Gateway Keys & Config</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                  <Link to="/super-admin/audit-logs" className="action-link-item">
+                    <span>Review System Audit Trails</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Layout 2: Merchants & Impersonation */}
+          {tab === 'merchants' && (
             <div className="table-wrapper glass-card" style={{ padding: '20px' }}>
               <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', fontWeight: 700 }}>Registered Merchant Tenants</h2>
               
@@ -237,7 +315,7 @@ export const SuperAdmin: React.FC = () => {
                     <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Merchant Info</th>
                     <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Subdomain</th>
                     <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Owner Credentials</th>
-                    <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Subscription settings</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Subscription Settings</th>
                     <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Impersonate</th>
                   </tr>
                 </thead>
@@ -325,8 +403,8 @@ export const SuperAdmin: React.FC = () => {
             </div>
           )}
 
-          {/* Tab 2: Subscription Packages */}
-          {activeTab === 'plans' && (
+          {/* Layout 3: Pricing Plans */}
+          {tab === 'plans' && (
             <div className="plans-editor-view" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
               {plans.map((p) => (
                 <div key={p.id} className="plan-editor-card glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -398,8 +476,8 @@ export const SuperAdmin: React.FC = () => {
             </div>
           )}
 
-          {/* Tab 3: SaaS System Settings */}
-          {activeTab === 'settings' && (
+          {/* Layout 4: SaaS Config Settings */}
+          {tab === 'settings' && (
             <form onSubmit={handleSaveSettings} className="settings-form-view glass-card" style={{ padding: '24px', maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>SaaS Platform Rules & Payment Credentials</h3>
@@ -471,6 +549,59 @@ export const SuperAdmin: React.FC = () => {
             </form>
           )}
 
+          {/* Layout 5: System Audit Logs */}
+          {tab === 'audit-logs' && (
+            <div className="table-wrapper glass-card" style={{ padding: '20px' }}>
+              <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ClipboardList style={{ color: 'var(--accent-cyan)' }} /> Platform System Audit Trails
+              </h2>
+
+              {logsLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <div className="spinner" style={{ margin: '0 auto 16px auto' }}></div>
+                  Loading system audit logs...
+                </div>
+              ) : (
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Timestamp</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Merchant Tenant</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Trigger User</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Action Type</th>
+                      <th style={{ padding: '12px', textAlign: 'left', color: 'var(--text-muted)' }}>Activity Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--glass-border)', fontSize: '0.88rem' }}>
+                        <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '12px', fontWeight: 600 }}>
+                          {log.tenant_name || `Tenant #${log.tenant_id}`}
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <span style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>
+                            {log.username || `User #${log.user_id}`}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <span className="badge badge-info" style={{ textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px', color: 'var(--text-secondary)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.details}>
+                          {log.details}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
       )}
 
@@ -481,33 +612,40 @@ export const SuperAdmin: React.FC = () => {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
-        .admin-tabs {
-          margin-bottom: 8px;
-        }
-        .tab-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 16px;
-          border-radius: var(--border-radius-sm);
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid var(--glass-border);
-          color: var(--text-secondary);
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-        .tab-btn:hover {
-          background: rgba(255, 255, 255, 0.06);
-          color: var(--text-primary);
-        }
-        .tab-btn.active {
-          background: var(--accent-cyan);
-          color: #000;
-          border-color: var(--accent-cyan);
-        }
         .table tr:hover {
           background: rgba(255, 255, 255, 0.01);
+        }
+        .quick-actions-list {
+          display: flex;
+          flex-direction: column;
+        }
+        .action-link-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 14px 18px;
+          border: 1px solid var(--glass-border);
+          border-radius: var(--border-radius-md);
+          background: rgba(255, 255, 255, 0.01);
+          color: var(--text-primary);
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 0.95rem;
+          transition: all 0.2s ease;
+        }
+        .action-link-item:hover {
+          background: rgba(6, 182, 212, 0.04);
+          border-color: var(--accent-cyan);
+          color: var(--accent-cyan);
+          transform: translateX(4px);
+        }
+        .action-link-item svg {
+          color: var(--text-muted);
+          transition: transform 0.2s ease;
+        }
+        .action-link-item:hover svg {
+          color: var(--accent-cyan);
+          transform: translateX(2px);
         }
       `}} />
     </div>
